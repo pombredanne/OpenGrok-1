@@ -119,6 +119,7 @@ public final class Configuration {
     private boolean chattyStatusPage;
     private final Map<String, String> cmds;
     private int tabSize;
+    private int command_timeout;
     private static final Logger logger = Logger.getLogger(Configuration.class.getName());
 
     /**
@@ -161,6 +162,14 @@ public final class Configuration {
         this.scanningDepth = scanningDepth;
     }
 
+    public int getCommandTimeout() {
+        return command_timeout;
+    }
+
+    public void setCommandTimeout(int timeout) {
+        this.command_timeout = timeout;
+    }
+    
     /**
      * Creates a new instance of Configuration
      */
@@ -202,6 +211,7 @@ public final class Configuration {
         cmds = new HashMap<String, String>();
         setSourceRoot(null);
         setDataRoot(null);
+        setCommandTimeout(600); // 10 minutes
     }
 
     public String getRepoCmd(String clazzName) {
@@ -647,7 +657,7 @@ public final class Configuration {
      * contains definition tags.
      */
     public static final String EFTAR_DTAGS_FILE = "index/dtags.eftar";
-    private transient String dtagsEftar = null;
+    private transient File dtagsEftar = null;
 
     /**
      * Get the eftar file, which contains definition tags.
@@ -658,12 +668,10 @@ public final class Configuration {
         if (dtagsEftar == null) {
             File tmp = new File(getDataRoot() + "/" + EFTAR_DTAGS_FILE);
             if (tmp.canRead()) {
-                dtagsEftar = tmp.getName();
-            } else {
-                dtagsEftar = "";
+                dtagsEftar = tmp;
             }
         }
-        return dtagsEftar.isEmpty() ? null : new File(dtagsEftar);
+        return dtagsEftar;
     }
 
     public String getDatabaseDriver() {
