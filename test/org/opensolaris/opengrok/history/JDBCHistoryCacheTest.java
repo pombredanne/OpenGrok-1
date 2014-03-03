@@ -85,6 +85,9 @@ public class JDBCHistoryCacheTest extends TestCase {
         cache = new JDBCHistoryCache(
                 DERBY_EMBEDDED_DRIVER, getURL() + ";create=true");
         cache.initialize();
+
+        // Mercurial parser needs to know if the history is stored in DB.
+        RuntimeEnvironment.getInstance().setStoreHistoryCacheInDB(true);
     }
 
     /**
@@ -108,6 +111,13 @@ public class JDBCHistoryCacheTest extends TestCase {
 
         // Reset any changes the test made to the runtime environment.
         RuntimeEnvironment.getInstance().setConfiguration(new Configuration());
+
+        // We really need to destroy the thread pool here since some of the
+        // threads might have some thread-local variables cached from previous
+        // test runs (like tags enabled) and this makes other tests fail in
+        // very nasty fashion (what is caused by fetch of particular thread
+        // with cached thread-local value appears like race condition).
+        RuntimeEnvironment.destroyRenamedHistoryExecutor();
     }
 
     /**
@@ -184,7 +194,6 @@ public class JDBCHistoryCacheTest extends TestCase {
         cache.optimize();
 
         // test reindex
-
         History historyNull = new History();
         cache.store(historyNull, repos);
         cache.optimize();
@@ -244,16 +253,23 @@ public class JDBCHistoryCacheTest extends TestCase {
 
         History updatedHistory = cache.get(reposRoot, repos, true);
 
-        HistoryEntry newEntry = new HistoryEntry(
+        HistoryEntry newEntry1 = new HistoryEntry(
                 "10:1e392ef0b0ed",
                 new Date(1245446973L / 60 * 60 * 1000), // whole minutes only
                 "xyz", null, "Return failure when executed with no arguments",
                 true);
-        newEntry.addFile("/mercurial/main.c");
+        newEntry1.addFile("/mercurial/main.c");
+        HistoryEntry newEntry2 = new HistoryEntry(
+                "11:bbb3ce75e1b8",
+                new Date(1245447973L / 60 * 60 * 1000), // whole minutes only
+                "xyz", null, "Do something else",
+                true);
+        newEntry2.addFile("/mercurial/main.c");
 
         LinkedList<HistoryEntry> updatedEntries = new LinkedList<HistoryEntry>(
                 updatedHistory.getHistoryEntries());
-        assertSameEntry(newEntry, updatedEntries.removeFirst());
+        assertSameEntry(newEntry2, updatedEntries.removeFirst());
+        assertSameEntry(newEntry1, updatedEntries.removeFirst());
         assertSameEntries(historyToStore.getHistoryEntries(), updatedEntries);
 
         // test clearing of cache
@@ -261,6 +277,7 @@ public class JDBCHistoryCacheTest extends TestCase {
         History clearedHistory = cache.get(reposRoot, repos, true);
         assertTrue("History should be empty",
                 clearedHistory.getHistoryEntries().isEmpty());
+
         cache.store(historyToStore, repos);
         assertSameEntries(historyToStore.getHistoryEntries(),
                 cache.get(reposRoot, repos, true).getHistoryEntries());
@@ -294,7 +311,7 @@ public class JDBCHistoryCacheTest extends TestCase {
         importHgChangeset(
                 reposRoot, getClass().getResource("hg-export.txt").getPath());
         repos.createCache(cache, latestRevision);
-        assertEquals("10:1e392ef0b0ed", cache.getLatestCachedRevision(repos));
+        assertEquals("11:bbb3ce75e1b8", cache.getLatestCachedRevision(repos));
     }
 
     /**
@@ -351,6 +368,10 @@ public class JDBCHistoryCacheTest extends TestCase {
         Repository repos = RepositoryFactory.getRepository(reposRoot);
         History history = repos.getHistory(reposRoot);
         cache.store(history, repos);
+
+        assertSameEntries(
+                history.getHistoryEntries(),
+                cache.get(reposRoot, repos, true).getHistoryEntries());
 
         // Set the lock timeout to one second to make it go faster.
         final Connection c = DriverManager.getConnection(getURL());

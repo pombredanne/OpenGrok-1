@@ -55,6 +55,7 @@ import org.opensolaris.opengrok.history.RepositoryFactory;
 import org.opensolaris.opengrok.history.RepositoryInfo;
 import org.opensolaris.opengrok.util.Executor;
 import org.opensolaris.opengrok.util.Getopt;
+import org.opensolaris.opengrok.util.Statistics;
 
 /**
  * Creates and updates an inverted source index as well as generates Xref, file
@@ -63,9 +64,13 @@ import org.opensolaris.opengrok.util.Getopt;
 @SuppressWarnings({"PMD.AvoidPrintStackTrace", "PMD.SystemPrintln"})
 public final class Indexer {
 
+    /* tunables for -r (history for remote repositories) */
     private static final String ON = "on";
     private static final String OFF = "off";
-    private static Indexer index = new Indexer();
+    private static final String DIRBASED = "dirbased";
+    private static final String UIONLY = "uionly";
+
+    private static final Indexer index = new Indexer();
     static final Logger log = Logger.getLogger(Indexer.class.getName());
     private static final String DERBY_EMBEDDED_DRIVER =
             "org.apache.derby.jdbc.EmbeddedDriver";
@@ -94,12 +99,12 @@ public final class Indexer {
      */
     @SuppressWarnings("PMD.UseStringBufferForStringAppends")
     public static void main(String argv[]) {
+        Statistics stats=new Statistics();//this won't count JVM creation though
         boolean runIndex = true;
         boolean update = true;
         boolean optimizedChanged = false;
-        ArrayList<String> zapCache = new ArrayList<String>();
-        CommandLineOptions cmdOptions = new CommandLineOptions();
-
+        ArrayList<String> zapCache = new ArrayList<>();
+        CommandLineOptions cmdOptions = new CommandLineOptions();        
 
         if (argv.length == 0) {
             System.err.println(cmdOptions.getUsage());
@@ -107,9 +112,9 @@ public final class Indexer {
         } else {
             Executor.registerErrorHandler();
             boolean searchRepositories = false;
-            ArrayList<String> subFiles = new ArrayList<String>();
-            ArrayList<String> repositories = new ArrayList<String>();
-            HashSet<String> allowedSymlinks = new HashSet<String>();
+            ArrayList<String> subFiles = new ArrayList<>();
+            ArrayList<String> repositories = new ArrayList<>();
+            HashSet<String> allowedSymlinks = new HashSet<>();
             String configFilename = null;
             String configHost = null;
             boolean addProjects = false;
@@ -215,27 +220,36 @@ public final class Indexer {
                             // Should be a full class name, but we also accept
                             // the shorthands "client" and "embedded". Expand
                             // the shorthands here.
-                            if ("client".equals(databaseDriver)) {
-                                databaseDriver = DERBY_CLIENT_DRIVER;
-                            } else if ("embedded".equals(databaseDriver)) {
-                                databaseDriver = DERBY_EMBEDDED_DRIVER;
+                            switch (databaseDriver) {
+                                case "client":
+                                    databaseDriver = DERBY_CLIENT_DRIVER;
+                                    break;
+                                case "embedded":
+                                    databaseDriver = DERBY_EMBEDDED_DRIVER;
+                                    break;
                             }
                             break;
                         case 'u':
                             databaseURL = getopt.getOptarg();
                             break;
-                        case 'r': {
+                        case 'r':
                             if (getopt.getOptarg().equalsIgnoreCase(ON)) {
-                                cfg.setRemoteScmSupported(true);
+                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.ON);
                             } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
-                                cfg.setRemoteScmSupported(false);
+                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.OFF);
+                            } else if (getopt.getOptarg().equalsIgnoreCase(DIRBASED)) {
+                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.DIRBASED);
+                            } else if (getopt.getOptarg().equalsIgnoreCase(UIONLY)) {
+                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.UIONLY);
                             } else {
-                                System.err.println("ERROR: You should pass either \"on\" or \"off\" as argument to -r");
-                                System.err.println("       Ex: \"-r on\" will allow retrival for remote SCM systems");
+                                System.err.println("ERROR: You should pass either \"on\" or \"off\" or \"uionly\" as argument to -r");
+                                System.err.println("       Ex: \"-r on\" will allow retrieval for remote SCM systems");
                                 System.err.println("           \"-r off\" will ignore SCM for remote systems");
+                                System.err.println("           \"-r dirbased\" will allow retrieval during history index "
+                                    + "only for repositories which allow getting history for directories");
+                                System.err.println("           \"-r uionly\" will support remote SCM for UI only");
                             }
-                        }
-                        break;
+                            break;
                         case 'o':
                             String CTagsExtraOptionsFile = getopt.getOptarg();
                             File CTagsFile = new File(CTagsExtraOptionsFile);
@@ -263,8 +277,8 @@ public final class Indexer {
                             if (oldval != cfg.isOptimizeDatabase()) {
                                 optimizedChanged = true;
                             }
+                            break;
                         }
-                        break;
                         case 'v':
                             cfg.setVerbose(true);
                             OpenGrokLogger.setOGConsoleLogLevel(Level.INFO);
@@ -318,7 +332,7 @@ public final class Indexer {
                             break;
                         case 'm': {
                             try {
-                                cfg.setIndexWordLimit(Integer.parseInt(getopt.getOptarg()));
+                                cfg.setRamBufferSize(Double.parseDouble(getopt.getOptarg()));
                             } catch (NumberFormatException exp) {
                                 System.err.println("ERROR: Failed to parse argument to \"-m\": " + exp.getMessage());
                                 System.exit(1);
@@ -549,6 +563,9 @@ public final class Indexer {
                 System.err.println("Exception: " + e.getLocalizedMessage());
                 log.log(Level.SEVERE, "Unexpected Exception", e);
                 System.exit(1);
+            } 
+            finally {
+                stats.report(log);
             }
         }
 
@@ -606,7 +623,7 @@ public final class Indexer {
                     }
                 }
                 if (!zapCache.isEmpty()) {
-                    HashSet<String> toZap = new HashSet<String>(zapCache.size() << 1);
+                    HashSet<String> toZap = new HashSet<>(zapCache.size() << 1);
                     boolean all = false;
                     for (String repo : zapCache) {
                         if ("*".equals(repo)) {
@@ -641,7 +658,7 @@ public final class Indexer {
 
             // Keep a copy of the old project list so that we can preserve
             // the customization of existing projects.
-            Map<String, Project> oldProjects = new HashMap<String, Project>();
+            Map<String, Project> oldProjects = new HashMap<>();
             for (Project p : projects) {
                 oldProjects.put(p.getPath(), p);
             }
@@ -735,7 +752,7 @@ public final class Indexer {
                 IndexDatabase.optimizeAll(executor);
             }
         } else {
-            List<IndexDatabase> dbs = new ArrayList<IndexDatabase>();
+            List<IndexDatabase> dbs = new ArrayList<>();
 
             for (String path : subFiles) {
                 Project project = Project.getProject(path);
@@ -794,6 +811,16 @@ public final class Indexer {
                 log.log(Level.WARNING, "Received interrupt while waiting for executor to finish", exp);
             }
         }
+        try {
+            // It can happen that history index is not done in prepareIndexer()
+            // but via db.update() above in which case we must make sure the
+            // thread pool for renamed file handling is destroyed.
+            RuntimeEnvironment.destroyRenamedHistoryExecutor();
+        } catch (InterruptedException ex) {
+            log.log(Level.SEVERE,
+                "destroying of renamed thread pool failed", ex);
+        }
+        log.info("Done indexing");
     }
 
     public void sendToConfigHost(RuntimeEnvironment env, String configHost) {

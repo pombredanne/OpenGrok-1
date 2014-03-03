@@ -223,11 +223,11 @@ public class RuntimeEnvironmentTest {
     }
 
     @Test
-    public void testIndexWordLimit() {
+    public void testRamBufferSize() {
         RuntimeEnvironment instance = RuntimeEnvironment.getInstance();
-        assertEquals(Integer.MAX_VALUE, instance.getIndexWordLimit());  //default is unlimited
-        instance.setIndexWordLimit(100000);
-        assertEquals(100000, instance.getIndexWordLimit());
+        assertEquals(16, instance.getRamBufferSize(), 0);  //default is 16
+        instance.setRamBufferSize(256);
+        assertEquals(256, instance.getRamBufferSize(), 0);
     }
 
     @Test
@@ -310,9 +310,13 @@ public class RuntimeEnvironmentTest {
     @Test
     public void testRemoteScmSupported() {
         RuntimeEnvironment instance = RuntimeEnvironment.getInstance();
-        assertFalse(instance.isRemoteScmSupported());
-        instance.setRemoteScmSupported(true);
-        assertTrue(instance.isRemoteScmSupported());
+        assertEquals(Configuration.RemoteSCM.OFF, instance.getRemoteScmSupported());
+        instance.setRemoteScmSupported(Configuration.RemoteSCM.ON);
+        assertEquals(Configuration.RemoteSCM.ON, instance.getRemoteScmSupported());
+        instance.setRemoteScmSupported(Configuration.RemoteSCM.DIRBASED);
+        assertEquals(Configuration.RemoteSCM.DIRBASED, instance.getRemoteScmSupported());
+        instance.setRemoteScmSupported(Configuration.RemoteSCM.UIONLY);
+        assertEquals(Configuration.RemoteSCM.UIONLY, instance.getRemoteScmSupported());
     }
 
     @Test

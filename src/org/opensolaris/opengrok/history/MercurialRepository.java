@@ -66,18 +66,32 @@ public class MercurialRepository extends Repository {
     public static final String NOFOREST_PROPERTY_KEY =
         "org.opensolaris.opengrok.history.mercurial.disableForest";
 
-    /** Template for formatting hg log output for files. */
-    private static final String FILE_TEMPLATE =
-        "changeset: {rev}:{node|short}\\n"
-        + "{branches}{tags}{parents}\\n"
-        + "user: {author}\\ndate: {date|isodate}\\n"
-        + "files: {files}\\n"
-        + "description: {desc|strip|obfuscate}\\n";
-    static final String FILE_COPIES_ = "file_copies: ";
+    static final String CHANGESET = "changeset: ";
+    static final String USER = "user: ";
+    static final String DATE = "date: ";
+    static final String DESCRIPTION = "description: ";
+    static final String FILE_COPIES = "file_copies: ";
+    static final String FILES = "files: ";
+    static final String END_OF_ENTRY =
+        "mercurial_history_end_of_entry";
+
+    private static final String TEMPLATE_STUB =
+        CHANGESET + "{rev}:{node|short}\\n"
+        + USER + "{author}\\n" + DATE + "{date|isodate}\\n"
+        + DESCRIPTION + "{desc|strip|obfuscate}\\n";
+
+    private static final String FILE_LIST = FILES + "{files}\\n";
+
+    /** Templates for formatting hg log output for files. */
+    private static final String FILE_TEMPLATE = TEMPLATE_STUB
+        + END_OF_ENTRY + "\\n";
+    private static final String FILE_TEMPLATE_LIST = TEMPLATE_STUB
+        + FILE_LIST + END_OF_ENTRY + "\\n";
 
     /** Template for formatting hg log output for directories. */
-    private static final String DIR_TEMPLATE = FILE_TEMPLATE
-        + FILE_COPIES_ + "{file_copies}\\n";
+    private static final String DIR_TEMPLATE =
+        TEMPLATE_STUB + FILE_LIST
+        + FILE_COPIES + "{file_copies}\\n" + END_OF_ENTRY + "\\n";
 
     /** Pattern used to extract author/revision from hg annotate. */
     private static final Pattern ANNOTATION_PATTERN =
@@ -105,6 +119,8 @@ public class MercurialRepository extends Repository {
     {
         String abs = file.getCanonicalPath();
         String filename = "";
+        RuntimeEnvironment env = RuntimeEnvironment.getInstance();
+
         if (abs.length() > directoryName.length()) {
             filename = abs.substring(directoryName.length() + 1);
         }
@@ -128,7 +144,12 @@ public class MercurialRepository extends Repository {
         }
 
         cmd.add("--template");
-        cmd.add(file.isDirectory() ? DIR_TEMPLATE : FILE_TEMPLATE);
+        if (file.isDirectory()) {
+            cmd.add(DIR_TEMPLATE);
+        } else {
+            /* JDBC requires to have complete list of files. */
+            cmd.add(env.storeHistoryCacheInDB() ? FILE_TEMPLATE_LIST : FILE_TEMPLATE);
+        }
         if (!filename.isEmpty()) {
             cmd.add(filename);
         }
@@ -417,6 +438,14 @@ public class MercurialRepository extends Repository {
             }
         }
         return ret;
+    }
+
+    @Override
+    protected String getRevisionForAnnotate(String history_revision)
+    {
+        String[] brev = history_revision.split(":");
+
+        return brev[0];
     }
 
     @Override

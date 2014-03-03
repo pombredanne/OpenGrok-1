@@ -69,10 +69,10 @@ include file="mast.jsp"
         Pattern reviewPattern = Pattern.compile(reviewRegex);
         Format df = new SimpleDateFormat("dd-MMM-yyyy");
         File f = cfg.getResourceFile();
-        History hist=null;
+        History hist = null;
         try {
-            hist = HistoryGuru.getInstance().getHistory(f);
-        } catch (Exception e)    {
+            hist = HistoryGuru.getInstance().getHistoryUI(f);
+        } catch (Exception e) {
             // should not happen
             %><h3>Problem</h3><p class="error"><%= e.getMessage() %></p><%
         }
@@ -105,10 +105,10 @@ document.domReady.push(function() {domReadyHistory();});
             <th>Comments <%
             if (hist.hasFileList()) {
                 %><a href="#" onclick="javascript: toggle_filelist(); return false;">
-                    <span class="filelist-hidden">
-                    (&lt;&lt;&lt; Hide modified files)</span>
-                    <span class="filelist">
-                    (Show modified files &gt;&gt;&gt;)</span></a><%
+                    <div class="filelist-hidden">
+                    (&lt;&lt;&lt; Hide modified files)</div>
+                    <div class="filelist">
+                    (Show modified files &gt;&gt;&gt;)</div></a><%
             }
             %>
             </th>
@@ -146,8 +146,9 @@ document.domReady.push(function() {domReadyHistory();});
                     if (entry.isActive()) {
                         String rp = uriEncodedName;
             %>
-            <td><a name="<%= rev %>" href="<%=
-                context + Prefix.XREF_P + rp + "?r=" + Util.URIEncode(rev) %>"><%=
+            <td><a href="<%= context + Prefix.HIST_L + rp %>#<%= rev %>"
+                title="link to revision line">#</a>
+                <a href="<%= context + Prefix.XREF_P + rp + "?r=" + Util.URIEncode(rev) %>"><%=
                     rev %></a></td>
             <td>
                 <input type="radio"<%
@@ -189,7 +190,7 @@ document.domReady.push(function() {domReadyHistory();});
                 %><%= author %><%
                 }
                 %></td>
-            <td><%
+            <td><a name="<%= rev %>"></a><p><%
                 String cout = Util.htmlize(entry.getMessage());
                 if (bugPage != null && bugPage.length() > 0) {
                     cout = bugPattern.matcher(cout).replaceAll("<a href=\""
@@ -199,10 +200,10 @@ document.domReady.push(function() {domReadyHistory();});
                     cout = reviewPattern.matcher(cout).replaceAll("<a href=\""
                         + reviewPage + "$1\">$1</a>");
                 }
-                %><%= cout %><%
+                %><%= cout %></p><%
                 Set<String> files = entry.getFiles();
                 if (files != null) {
-                %><span class="filelist-hidden"><br/><%
+                %><div class="filelist-hidden"><br/><%
                     for (String ifile : files) {
                         String jfile = Util.stripPathPrefix(path, ifile);
                         if (rev == "") {
@@ -213,7 +214,7 @@ document.domReady.push(function() {domReadyHistory();});
 <a class="h" href="<%= context + Prefix.XREF_P + ifile %>?r=<%= rev %>"><%= jfile %></a><br/><%
                         }
                     }
-                %></span><%
+                %></div><%
                 }
                 %></td>
         </tr><%

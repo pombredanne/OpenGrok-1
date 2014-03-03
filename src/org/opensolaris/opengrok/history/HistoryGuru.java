@@ -33,14 +33,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.opensolaris.opengrok.OpenGrokLogger;
+import org.opensolaris.opengrok.configuration.Configuration.RemoteSCM;
 import org.opensolaris.opengrok.configuration.RuntimeEnvironment;
 import org.opensolaris.opengrok.index.IgnoredNames;
+import org.opensolaris.opengrok.util.StringUtils;
 
 /**
  * The HistoryGuru is used to implement an transparent layer to the various
@@ -126,18 +128,18 @@ public final class HistoryGuru {
     public Annotation annotate(File file, String rev) throws IOException {
         Annotation ret = null;
 
-        Repository repos = getRepository(file);
-        if (repos != null) {
-            ret = repos.annotate(file, rev);
+        Repository repo = getRepository(file);
+        if (repo != null) {
+            ret = repo.annotate(file, rev);
             History hist = null;
             try {
-                hist = repos.getHistory(file);
+                hist = repo.getHistory(file);
             } catch (HistoryException ex) {
                 Logger.getLogger(HistoryGuru.class.getName()).log(Level.FINEST,
                     "Cannot get messages for tooltip: ", ex);
             }
             if (hist != null && ret != null) {
-             Set<String> revs=ret.getRevisions();
+             Set<String> revs = ret.getRevisions();
              // !!! cannot do this because of not matching rev ids (keys)
              // first is the most recent one, so we need the position of "rev"
              // until the end of the list
@@ -145,15 +147,12 @@ public final class HistoryGuru {
              //     hent = hent.subList(hent.indexOf(rev), hent.size());
              //}
              for (HistoryEntry he : hist.getHistoryEntries()) {
-                String cmr=he.getRevision();
-                //TODO this is only for mercurial, for other SCMs it might also
-                // be a problem, we need to revise how we shorten the rev # for
-                // annotate
-                String[] brev=cmr.split(":");
-                if (revs.contains(brev[0])) {
-                    ret.addDesc(brev[0], "changeset: "+he.getRevision()
-                        +"\nsummary: "+he.getMessage()+"\nuser: "
-                        +he.getAuthor()+"\ndate: "+he.getDate());
+                String hist_rev = he.getRevision();
+                String short_rev = repo.getRevisionForAnnotate(hist_rev);
+                if (revs.contains(short_rev)) {
+                    ret.addDesc(short_rev, "changeset: " + he.getRevision() +
+                        "\nsummary: " + he.getMessage() + "\nuser: " +
+                        he.getAuthor() + "\ndate: " + he.getDate());
                 }
              }
             }
@@ -184,7 +183,22 @@ public final class HistoryGuru {
      * @throws HistoryException on error when accessing the history
      */
     public History getHistory(File file) throws HistoryException {
-        return getHistory(file, true);
+        return getHistory(file, true, false);
+    }
+
+    public History getHistory(File file, boolean withFiles) throws HistoryException {
+        return getHistory(file, true, false);
+    }
+
+    /**
+     * Get history for the specified file (called from the web app).
+     *
+     * @param file the file to get the history for
+     * @return history for the file
+     * @throws HistoryException on error when accessing the history
+     */
+    public History getHistoryUI(File file) throws HistoryException {
+        return getHistory(file, true, true);
     }
 
     /**
@@ -194,24 +208,28 @@ public final class HistoryGuru {
      * @param withFiles whether or not the returned history should contain
      * a list of files touched by each changeset (the file list may be skipped
      * if false, but it doesn't have to)
+     * @param ui called from the webapp
      * @return history for the file
      * @throws HistoryException on error when accessing the history
      */
-    public History getHistory(File file, boolean withFiles)
+    public History getHistory(File file, boolean withFiles, boolean ui)
             throws HistoryException {
         final File dir = file.isDirectory() ? file : file.getParentFile();
-        final Repository repos = getRepository(dir);
+        final Repository repo = getRepository(dir);
 
         History history = null;
+        RemoteSCM rscm = RuntimeEnvironment.getInstance().getRemoteScmSupported();
+        boolean doRemote = (ui && (rscm == RemoteSCM.UIONLY))
+            || (rscm == RemoteSCM.ON)
+            || ((rscm == RemoteSCM.DIRBASED) && (repo != null) && repo.hasHistoryForDirectories());
 
-        if (repos != null && repos.isWorking() && repos.fileHasHistory(file)
-            && (!repos.isRemote() || RuntimeEnvironment.getInstance()
-                .isRemoteScmSupported()))
-        {
-            if (useCache() && historyCache.supportsRepository(repos)) {
-                history = historyCache.get(file, repos, withFiles);
+        if (repo != null && repo.isWorking() && repo.fileHasHistory(file)
+            && (!repo.isRemote() || doRemote)) {
+
+            if (useCache() && historyCache.supportsRepository(repo)) {
+                history = historyCache.get(file, repo, withFiles);
             } else {
-                history = repos.getHistory(file);
+                history = repo.getHistory(file);
             }
         }
 
@@ -225,8 +243,7 @@ public final class HistoryGuru {
      * @param rev The revision to get
      * @return An InputStream containing the named revision of the file.
      */
-    public InputStream getRevision(String parent, String basename, String rev)
-    {
+    public InputStream getRevision(String parent, String basename, String rev) {
         InputStream ret = null;
 
         Repository rep = getRepository(new File(parent));
@@ -243,13 +260,18 @@ public final class HistoryGuru {
      * history
      */
     public boolean hasHistory(File file) {
-        Repository repos = getRepository(file);
+        Repository repo = getRepository(file);
 
-        return repos == null
-            ? false
-            : repos.isWorking() && repos.fileHasHistory(file)
-                && (RuntimeEnvironment.getInstance().isRemoteScmSupported()
-                    || !repos.isRemote());
+        if (repo == null) {
+            return false;
+        }
+
+        // This should return true for Annotate view.
+        return repo.isWorking() && repo.fileHasHistory(file)
+                && ((RuntimeEnvironment.getInstance().getRemoteScmSupported() == RemoteSCM.ON)
+                    || (RuntimeEnvironment.getInstance().getRemoteScmSupported() == RemoteSCM.UIONLY)
+                    || (RuntimeEnvironment.getInstance().getRemoteScmSupported() == RemoteSCM.DIRBASED)
+                    || !repo.isRemote());
     }
 
     /**
@@ -458,10 +480,6 @@ public final class HistoryGuru {
     }
 
     private void createCache(Repository repository, String sinceRevision) {
-        if (!useCache()) {
-            return;
-        }
-
         String path = repository.getDirectoryName();
         String type = repository.getClass().getSimpleName();
 
@@ -470,7 +488,7 @@ public final class HistoryGuru {
             long start = System.currentTimeMillis();
 
             if (verbose) {
-                log.log(Level.INFO, "Create historycache for {0} ({1})",
+                log.log(Level.INFO, "Creating historycache for {0} ({1})",
                     new Object[]{path, type});
             }
 
@@ -484,8 +502,9 @@ public final class HistoryGuru {
 
             if (verbose) {
                 long stop = System.currentTimeMillis();
-                log.log(Level.INFO, "Creating historycache for {0} took ({1}ms)",
-                    new Object[]{path, String.valueOf(stop - start)});
+                String time_str = StringUtils.getReadableTime(stop - start);
+                log.log(Level.INFO, "Done historycache for {0} (took {1})",
+                    new Object[]{path, time_str});
             }
         } else {
             log.log(Level.WARNING, "Skipping creation of historycache of "
@@ -494,35 +513,43 @@ public final class HistoryGuru {
     }
 
     private void createCacheReal(Collection<Repository> repositories) {
-        int num = Runtime.getRuntime().availableProcessors() * 2;
-        String total = System.getProperty("org.opensolaris.opengrok.history.NumCacheThreads");
-        if (total != null) {
-            try {
-                num = Integer.valueOf(total);
-            } catch (Throwable t) {
-                log.log(Level.WARNING, "Failed to parse the number of cache threads to use for cache creation", t);
-            }
-        }
-        ExecutorService executor = Executors.newFixedThreadPool(num);
+        ExecutorService executor = RuntimeEnvironment.getHistoryExecutor();
 
-        for (final Repository repos : repositories) {
+        final CountDownLatch latch = new CountDownLatch(repositories.size());
+        for (final Repository repo : repositories) {
             final String latestRev;
+
             try {
-                latestRev = historyCache.getLatestCachedRevision(repos);
+                latestRev = historyCache.getLatestCachedRevision(repo);
             } catch (HistoryException he) {
                 log.log(Level.WARNING,
                         String.format(
                         "Failed to retrieve latest cached revision for %s",
-                        repos.getDirectoryName()), he);
+                        repo.getDirectoryName()), he);
+                latch.countDown();
                 continue;
             }
             executor.submit(new Runnable() {
                 @Override
                 public void run() {
-                    createCache(repos, latestRev);
+                    createCache(repo, latestRev);
+                    latch.countDown();
                 }
             });
         }
+
+        /*
+         * Wait until the history of all repositories is done. This is necessary
+         * since the next phase of generating index will need the history to
+         * be ready as it is recorded in Lucene index.
+         */
+        try {
+            latch.await();
+        } catch (InterruptedException ex) {
+            OpenGrokLogger.getLogger().log(Level.SEVERE,
+                "latch exception" + ex);
+        }
+
         executor.shutdown();
         while (!executor.isTerminated()) {
             try {
@@ -532,6 +559,14 @@ public final class HistoryGuru {
                 OpenGrokLogger.getLogger().log(Level.WARNING,
                     "Received interrupt while waiting for executor to finish", exp);
             }
+        }
+        RuntimeEnvironment.freeHistoryExecutor();
+        try {
+            /* Thread pool for handling renamed files needs to be destroyed too. */
+            RuntimeEnvironment.destroyRenamedHistoryExecutor();
+        } catch (InterruptedException ex) {
+            OpenGrokLogger.getLogger().log(Level.SEVERE,
+                "destroying of renamed thread pool failed", ex);
         }
 
         // The cache has been populated. Now, optimize how it is stored on

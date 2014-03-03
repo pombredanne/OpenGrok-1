@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
  */
 
 package org.opensolaris.opengrok.history;
@@ -30,28 +30,104 @@ import java.beans.XMLDecoder;
 import java.beans.XMLEncoder;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import org.opensolaris.opengrok.OpenGrokLogger;
 import org.opensolaris.opengrok.configuration.RuntimeEnvironment;
+import org.opensolaris.opengrok.util.IOUtils;
 
 /*
  * Class representing file based storage of per source file history.
  */
 class FileHistoryCache implements HistoryCache {
     private final Object lock = new Object();
+    private String historyCacheDirName = "historycache";
+    private String latestRevFileName = "OpenGroklatestRev";
+
+    /**
+     * Generate history for single file.
+     * @param map_entry entry mapping filename to list of history entries
+     * @param env runtime environment
+     * @param repository repository object in which the file belongs
+     * @param test file object
+     * @param root root of the source repository
+     * @param renamed true if the files was renamed in the past
+     */
+    private void doFileHistory(Map.Entry<String, List<HistoryEntry>> map_entry,
+            RuntimeEnvironment env, Repository repository,
+            File test, File root, boolean renamed) throws HistoryException {
+
+        History hist = null;
+
+        /*
+         * Certain files require special handling - this is mainly for
+         * files which have been renamed in Mercurial repository.
+         * This ensures that their complete history (follow) will be
+         * saved.
+         */
+        if (renamed) {
+            hist = repository.getHistory(test);
+        }
+
+        if (hist == null) {
+            hist = new History();
+
+            // File based history cache does not store files for individual
+            // changesets so strip them.
+            for (HistoryEntry ent : map_entry.getValue()) {
+                ent.strip();
+            }
+
+            // add all history entries
+            hist.setHistoryEntries(map_entry.getValue());
+        } else {
+            for (HistoryEntry ent : hist.getHistoryEntries()) {
+                ent.strip();
+            }
+        }
+
+        // Assign tags to changesets they represent.
+        if (env.isTagsEnabled() && repository.hasFileBasedTags()) {
+            repository.assignTagsInHistory(hist);
+        }
+
+        File file = new File(root, map_entry.getKey());
+        if (!file.isDirectory()) {
+            storeFile(hist, file);
+        }
+    }
+
+    private boolean isRenamedFile(Map.Entry<String,
+            List<HistoryEntry>> map_entry, RuntimeEnvironment env, 
+            Repository repository, History history) throws IOException {
+
+        String fullfile = map_entry.getKey();
+        String repodir = env.getPathRelativeToSourceRoot(
+            new File(repository.getDirectoryName()), 0);
+        String shortestfile = fullfile.substring(repodir.length() + 1);
+
+        return (history.isRenamed(shortestfile));
+    }
 
     static class FilePersistenceDelegate extends PersistenceDelegate {
         @Override
@@ -111,10 +187,13 @@ class FileHistoryCache implements HistoryCache {
      * Read history from a file.
      */
     private static History readCache(File file) throws IOException {
-        try (FileInputStream in = new FileInputStream(file);
-                XMLDecoder d = new XMLDecoder(
-                        new BufferedInputStream(new GZIPInputStream(in)))) {
+        try {
+            FileInputStream in = new FileInputStream(file);
+            XMLDecoder d = new XMLDecoder(
+                new BufferedInputStream(new GZIPInputStream(in)));
             return (History) d.readObject();
+        } catch (IOException e) {
+            throw e;
         }
     }
 
@@ -125,14 +204,35 @@ class FileHistoryCache implements HistoryCache {
      * @param file file to store the history object into
      * @throws HistoryException
      */
-    private void storeFile(History history, File file) throws HistoryException {
+    private void storeFile(History histNew, File file) throws HistoryException {
 
         File cache = getCachedFile(file);
+        History history = histNew;
 
         File dir = cache.getParentFile();
         if (!dir.isDirectory() && !dir.mkdirs()) {
             throw new HistoryException(
                     "Unable to create cache directory '" + dir + "'.");
+        }
+
+        // Incremental update of the history for this file.
+        History histOld;
+        try {
+            histOld = readCache(cache);
+            // Merge old history with the new history.
+            List<HistoryEntry> listOld = histOld.getHistoryEntries();
+            if (!listOld.isEmpty()) {
+                List<HistoryEntry> listNew = histNew.getHistoryEntries();
+                ListIterator li = listNew.listIterator(listNew.size());
+                while (li.hasPrevious()) {
+                    listOld.add(0, (HistoryEntry) li.previous());
+                }
+                history = new History(listOld);
+            }
+        } catch (IOException ex) {
+            // Ideally we would want to catch the case when incremental update
+            // is done but the cached file is not there however we do not have
+            // the data to do it here.
         }
 
         // We have a problem that multiple threads may access the cache layer
@@ -189,11 +289,19 @@ class FileHistoryCache implements HistoryCache {
     @Override
     public void store(History history, Repository repository)
             throws HistoryException {
-        RuntimeEnvironment env = RuntimeEnvironment.getInstance();
+        final RuntimeEnvironment env = RuntimeEnvironment.getInstance();
 
-        if (history.getHistoryEntries() == null) {
+        String latestRev = null;
+
+        // Return immediately when there is nothing to do.
+        List<HistoryEntry> entries = history.getHistoryEntries();
+        if (entries.isEmpty()) {
             return;
         }
+
+        OpenGrokLogger.getLogger().log(Level.FINE,
+            "Storing history for repo {0}",
+            new Object[] {repository.getDirectoryName()});
 
         HashMap<String, List<HistoryEntry>> map =
                 new HashMap<String, List<HistoryEntry>>();
@@ -206,7 +314,20 @@ class FileHistoryCache implements HistoryCache {
          * to changesets in which the file was modified.
          */
         for (HistoryEntry e : history.getHistoryEntries()) {
+            // The history entries are sorted from newest to oldest.
+            if (latestRev == null) {
+                latestRev = e.getRevision();
+            }
             for (String s : e.getFiles()) {
+                /*
+                 * We do not want to generate history cache for files which
+                 * do not currently exist in the repository.
+                 */
+                File test = new File(env.getSourceRootPath() + s);
+                if (!test.exists()) {
+                    continue;
+                }
+
                 List<HistoryEntry> list = map.get(s);
                 if (list == null) {
                     list = new ArrayList<HistoryEntry>();
@@ -227,64 +348,75 @@ class FileHistoryCache implements HistoryCache {
         /*
          * Now traverse the list of files from the hash map built above
          * and for each file store its history (saved in the value of the
-         * hash map entry for the file) in a file.
+         * hash map entry for the file) in a file. Skip renamed files
+         * which will be handled separately below.
          */
-        File root = RuntimeEnvironment.getInstance().getSourceRootFile();
+        final File root = RuntimeEnvironment.getInstance().getSourceRootFile();
         for (Map.Entry<String, List<HistoryEntry>> map_entry : map.entrySet()) {
-            History hist = null;
-            
-            /*
-             * We do not want to generate history cache for files which
-             * do not currently exist in the repository.
-             */
-            File test = new File(env.getSourceRootPath() + map_entry.getKey());
-            if (!test.exists()) {
-                continue;
-            }
-
-            /*
-             * Certain files require special handling - this is mainly for
-             * files which have been renamed in Mercurial repository.
-             * This ensures that their complete history (follow) will be
-             * saved.
-             */
-            String fullfile = map_entry.getKey();
             try {
-                String repodir = env.getPathRelativeToSourceRoot(
-                    new File(repository.getDirectoryName()), 0);
-                String shortestfile = fullfile.substring(repodir.length() + 1);
-                if (history.isRenamed(shortestfile)) {
-                    hist = repository.getHistory(test);
+                if (RuntimeEnvironment.RenamedFilesEnabled() &&
+                    isRenamedFile(map_entry, env, repository, history)) {
+                        continue;
                 }
             } catch (IOException ex) {
-                Logger.getLogger(FileHistoryCache.class.getName()).log(
-                    Level.SEVERE, null, ex);
+               OpenGrokLogger.getLogger().log(Level.WARNING,
+                   "isRenamedFile() got exception" + ex);
             }
             
-            if (hist == null) {
-                hist = new History();
-                        
-                for (HistoryEntry ent : map_entry.getValue()) {
-                    ent.strip();
-                }
-                // add all history entries
-                hist.setHistoryEntries(map_entry.getValue());
-            } else {
-                for (HistoryEntry ent : hist.getHistoryEntries()) {
-                    ent.strip();
-                }
-            }
+            doFileHistory(map_entry, env, repository, null, root, false);
+        }
 
-            // Assign tags to changesets they represent
-            if (env.isTagsEnabled() && repository.hasFileBasedTags()) {
-                repository.assignTagsInHistory(hist);
-            }
+        if (!RuntimeEnvironment.RenamedFilesEnabled()) {
+            return;
+        }
 
-            File file = new File(root, map_entry.getKey());
-            if (!file.isDirectory()) {
-                storeFile(hist, file);
+        /*
+         * Now handle renamed files (in parallel).
+         */
+        HashMap<String, List<HistoryEntry>> renamed_map =
+                new HashMap<String, List<HistoryEntry>>();
+        for (final Map.Entry<String, List<HistoryEntry>> map_entry : map.entrySet()) {
+            try {
+                if (isRenamedFile(map_entry, env, repository, history)) {
+                    renamed_map.put(map_entry.getKey(), map_entry.getValue());
+                }
+            } catch (IOException ex) {
+                OpenGrokLogger.getLogger().log(Level.WARNING,
+                    "isRenamedFile() got exception" + ex);
             }
         }
+        final Repository repositoryF = repository;
+        final CountDownLatch latch = new CountDownLatch(renamed_map.size());
+        for (final Map.Entry<String, List<HistoryEntry>> map_entry : renamed_map.entrySet()) {
+            RuntimeEnvironment.getHistoryRenamedExecutor().submit(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        doFileHistory(map_entry, env, repositoryF,
+                            new File(env.getSourceRootPath() + map_entry.getKey()),
+                            root, true);
+                    } catch (Exception ex) {
+                        // We want to catch any exception since we are in thread.
+                        OpenGrokLogger.getLogger().log(Level.WARNING,
+                            "doFileHistory() got exception" + ex);
+                    } finally {
+                        latch.countDown();
+                    }
+                }
+            });
+        }
+
+        // Wait for the executors to finish.
+        try {
+            // Wait for the executors to finish.
+            latch.await();
+        } catch (InterruptedException ex) {
+            OpenGrokLogger.getLogger().log(Level.SEVERE, "latch exception" + ex);
+        }
+        storeLatestCachedRevision(repository, latestRev);
+        OpenGrokLogger.getLogger().log(Level.FINE,
+            "Done storing history for repo {0}",
+            new Object[] {repository.getDirectoryName()});
     }
 
     @Override
@@ -357,7 +489,7 @@ class FileHistoryCache implements HistoryCache {
         }
         RuntimeEnvironment env = RuntimeEnvironment.getInstance();
         File dir = env.getDataRootFile();
-        dir = new File(dir, "historycache");
+        dir = new File(dir, this.historyCacheDirName);
         try {
             dir = new File(dir, env.getPathRelativeToSourceRoot(
                 new File(repos.getDirectoryName()), 0));
@@ -368,9 +500,82 @@ class FileHistoryCache implements HistoryCache {
         return dir.exists();
     }
 
+    public String getRepositoryHistDataDirname(Repository repository) {
+        RuntimeEnvironment env = RuntimeEnvironment.getInstance();
+        String repoDirBasename;
+        Logger logger = OpenGrokLogger.getLogger();
+
+        try {
+            repoDirBasename = env.getPathRelativeToSourceRoot(
+                    new File(repository.getDirectoryName()), 0);
+        } catch (IOException ex) {
+            logger.log(Level.WARNING, "Could not resolve " +
+                repository.getDirectoryName()+" relative to source root", ex);
+            return null;
+        }
+
+        return env.getDataRootPath() + File.separatorChar
+            + this.historyCacheDirName
+            + repoDirBasename;
+    }
+
+    private String getRepositoryCachedRevPath(Repository repository) {
+        return getRepositoryHistDataDirname(repository)
+            + File.separatorChar + latestRevFileName;
+    }
+
+    /**
+     * Store latest indexed revision for the repository under data directory.
+     * @param repository repository
+     * @param rev latest revision which has been just indexed
+     */
+    private void storeLatestCachedRevision(Repository repository, String rev) {
+        Writer writer = null;
+        Logger logger = OpenGrokLogger.getLogger();
+
+        try {
+            writer = new BufferedWriter(new OutputStreamWriter(
+                  new FileOutputStream(getRepositoryCachedRevPath(repository))));
+            writer.write(rev);
+        } catch (IOException ex) {
+            logger.log(Level.WARNING, "cannot write latest cached revision to file: {0}",
+                ex.getCause());
+        } finally {
+           try {
+               writer.close();
+           } catch (IOException ex) {
+               logger.log(Level.INFO, "cannot close file: {0}", ex);
+           }
+        }
+    }
+
     @Override
     public String getLatestCachedRevision(Repository repository) {
-        return null;
+        String rev = null;
+        BufferedReader input;
+        Logger logger = OpenGrokLogger.getLogger();
+
+        try {
+            input = new BufferedReader(new FileReader(getRepositoryCachedRevPath(repository)));
+            try {
+                rev = input.readLine();
+            } catch (java.io.IOException e) {
+                logger.log(Level.WARNING, "failed to load: {0}", e);
+                return null;
+            } finally {
+                try {
+                    input.close();
+                } catch (java.io.IOException e) {
+                    logger.log(Level.INFO, "failed to close: {0}", e);
+                }
+            }
+        } catch (java.io.FileNotFoundException e) {
+            logger.log(Level.FINE, "not loading latest cached revision file from "
+                + getRepositoryCachedRevPath(repository));
+            return null;
+        }
+
+        return rev;
     }
 
     @Override
@@ -384,9 +589,17 @@ class FileHistoryCache implements HistoryCache {
 
     @Override
     public void clear(Repository repository) {
-        // We only expect this method to be called if the cache supports
-        // incremental update, so it's not implemented here for now.
-        throw new UnsupportedOperationException();
+        // remove the file cached last revision (done separately in case
+        // it gets ever moved outside of the hierarchy)
+        File cachedRevFile = new File(getRepositoryCachedRevPath(repository));
+        cachedRevFile.delete();
+
+        // Remove all files which constitute the history cache.
+        try {
+            IOUtils.removeRecursive(Paths.get(getRepositoryHistDataDirname(repository)));
+        } catch (IOException ex) {
+            Logger.getLogger(FileHistoryCache.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
     @Override

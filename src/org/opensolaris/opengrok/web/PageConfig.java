@@ -106,6 +106,9 @@ public final class PageConfig {
     private StringBuilder headLines;
     private static final Logger log = Logger.getLogger(PageConfig.class.getName());
 
+    private static final String ATTR_NAME = PageConfig.class.getCanonicalName();
+    private HttpServletRequest req;
+
     /**
      * Add the given data to the &lt;head&gt; section of the html page to
      * generate.
@@ -561,7 +564,7 @@ public final class PageConfig {
     /**
      * Check, whether annotations are available for the related resource.
      *
-     * @return {@code true} if annotions are available.
+     * @return {@code true} if annotations are available.
      */
     public boolean hasAnnotations() {
         if (hasAnnotation == null) {
@@ -585,7 +588,7 @@ public final class PageConfig {
     }
 
     /**
-     * Get the annotation for the reqested resource.
+     * Get the annotation for the requested resource.
      *
      * @return {@code null} if not available or annotation was not requested,
      * the cached annotation otherwise.
@@ -1204,9 +1207,6 @@ public final class PageConfig {
         return pcfg;
     }
     
-    private static final String ATTR_NAME = PageConfig.class.getCanonicalName();
-    private HttpServletRequest req;
-
     private PageConfig(HttpServletRequest req) {
         this.req = req;
     }
