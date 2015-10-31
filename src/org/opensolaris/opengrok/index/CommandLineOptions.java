@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
  *
  * Portions Copyright 2011 Jens Elkner.
  */
@@ -70,7 +70,7 @@ public class CommandLineOptions {
     }
 
     public CommandLineOptions() {
-        options = new ArrayList<Option>();
+        options = new ArrayList<>();
         options.add(new Option('?', null, "Help"));
         options.add(new Option('A', ".ext|prefix.:analyzer", "Files with the named prefix/extension should be analyzed with the specified class"));
         options.add(new Option('a', ON_OFF, "Allow or disallow leading wildcards in a search"));
@@ -84,14 +84,14 @@ public class CommandLineOptions {
         options.add(new Option('H', null, "Generate history cache for all repositories"));
         options.add(new Option('h', "/path/to/repository", "just generate history cache for the specified repos (absolute path from source root)"));
         options.add(new Option('I', "pattern", "Only files matching this pattern will be examined (supports wildcards, example: -I *.java -I *.c)"));
-        options.add(new Option('i', "pattern", "Ignore the named files or directories (supports wildcards, example: -i *.so -i *.dll)"));
+        options.add(new Option('i', "pattern", "Ignore the named files (prefix with 'f:') or directories (prefix with 'd:') (supports wildcards, example: -i *.so -i *.dll)"));
         options.add(new Option('j', "class", "Name of the JDBC driver class used by the history cache. Can use one of the shorthands \"client\" (org.apache.derby.jdbc.ClientDriver) or \"embedded\" (org.apache.derby.jdbc.EmbeddedDriver). Default: \"client\""));
         options.add(new Option('k', "/path/to/repository", "Kill the history cache for the given repository and exit. Use '*' to delete the cache for all repositories."));
         options.add(new Option('K', null, "List all repository pathes and exit."));
         options.add(new Option('L', "path", "Path to the subdirectory in the web-application containing the requested stylesheet. The following factory-defaults exist: \"default\", \"offwhite\" and \"polished\""));
         options.add(new Option('l', ON_OFF, "Turn on/off locking of the Lucene database during index generation"));
         options.add(new Option('m', NUMBER, "Amount of memory that may be used for buffering added documents and deletions before they are flushed to the Directory(default "+Configuration.defaultRamBufferSize+"MB). Please increase JVM heap accordingly, too."));
-        options.add(new Option('N', "/path/to/symlink", "Allow this symlink to be followed. Option may be repeated."));
+        options.add(new Option('N', "/path/to/symlink", "Allow this symlink to be followed. Option may be repeated. By default only symlinks directly under source root directory are allowed."));
         options.add(new Option('n', null, "Do not generate indexes, but process all other command line options"));
         options.add(new Option('O', ON_OFF, "Turn on/off the optimization of the index database as part of the indexing step"));
         options.add(new Option('o', "path", "File with extra command line options for ctags"));
@@ -110,7 +110,7 @@ public class CommandLineOptions {
         options.add(new Option('V', null, "Print version and quit"));
         options.add(new Option('v', null, "Print progress information as we go along"));
         options.add(new Option('W', "/path/to/configuration", "Write the current configuration to the specified file (so that the web application can use the same configuration"));
-        options.add(new Option('w', "webapp-context", "Context of webapp. Default is /source. If you specify a different name, make sure to rename source.war to that name."));
+        options.add(new Option('w', "webapp-context", "Context of webapp. Default is /source. If you specify a different name, make sure to rename source.war to that name. Also FULL reindex is needed if this is changed."));
         options.add(new Option('X', "url:suffix", "URL Suffix for the user Information provider. Default: \"\""));
         options.add(new Option('z', NUMBER, "depth of scanning for repositories in directory structure relative to source root. Default is "+Configuration.defaultScanningDepth+" ."));
     }
@@ -149,7 +149,7 @@ public class CommandLineOptions {
     public String getUsage() {
         StringWriter wrt = new StringWriter();
         try (PrintWriter out = new PrintWriter(wrt)) {
-            out.println("Usage: opengrok.jar [options]");
+            out.println("Usage: opengrok.jar [options] [subDir1 ..]");
             for (Option o : options) {
                 out.println(o.getUsage());
             }

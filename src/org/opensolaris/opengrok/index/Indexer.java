@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2005, 2012, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
  *
  * Portions Copyright 2011 Jens Elkner.
  */
@@ -72,10 +72,10 @@ public final class Indexer {
 
     private static final Indexer index = new Indexer();
     static final Logger log = Logger.getLogger(Indexer.class.getName());
-    private static final String DERBY_EMBEDDED_DRIVER =
-            "org.apache.derby.jdbc.EmbeddedDriver";
-    private static final String DERBY_CLIENT_DRIVER =
-            "org.apache.derby.jdbc.ClientDriver";
+    private static final String DERBY_EMBEDDED_DRIVER
+            = "org.apache.derby.jdbc.EmbeddedDriver";
+    private static final String DERBY_CLIENT_DRIVER
+            = "org.apache.derby.jdbc.ClientDriver";
 
     public static Indexer getInstance() {
         return index;
@@ -99,12 +99,12 @@ public final class Indexer {
      */
     @SuppressWarnings("PMD.UseStringBufferForStringAppends")
     public static void main(String argv[]) {
-        Statistics stats=new Statistics();//this won't count JVM creation though
+        Statistics stats = new Statistics(); //this won't count JVM creation though
         boolean runIndex = true;
         boolean update = true;
         boolean optimizedChanged = false;
         ArrayList<String> zapCache = new ArrayList<>();
-        CommandLineOptions cmdOptions = new CommandLineOptions();        
+        CommandLineOptions cmdOptions = new CommandLineOptions();
 
         if (argv.length == 0) {
             System.err.println(cmdOptions.getUsage());
@@ -113,6 +113,7 @@ public final class Indexer {
             Executor.registerErrorHandler();
             boolean searchRepositories = false;
             ArrayList<String> subFiles = new ArrayList<>();
+            ArrayList<String> subFilesList = new ArrayList<>();
             ArrayList<String> repositories = new ArrayList<>();
             HashSet<String> allowedSymlinks = new HashSet<>();
             String configFilename = null;
@@ -160,199 +161,6 @@ public final class Indexer {
                 getopt.reset();
                 while ((cmd = getopt.getOpt()) != -1) {
                     switch (cmd) {
-                        case 'q':
-                            cfg.setVerbose(false);
-                            OpenGrokLogger.setOGConsoleLogLevel(Level.WARNING);
-                            break;
-                        case 'e':
-                            cfg.setGenerateHtml(false);
-                            break;
-                        case 'P':
-                            addProjects = true;
-                            break;
-                        case 'p':
-                            defaultProject = getopt.getOptarg();
-                            break;
-                        case 'c':
-                            cfg.setCtags(getopt.getOptarg());
-                            break;
-                        case 'w': {
-                            String webapp = getopt.getOptarg();
-                            if (webapp.charAt(0) != '/' && !webapp.startsWith("http")) {
-                                webapp = "/" + webapp;
-                            }
-                            if (webapp.endsWith("/")) {
-                                cfg.setUrlPrefix(webapp + "s?");
-                            } else {
-                                cfg.setUrlPrefix(webapp + "/s?");
-                            }
-                        }
-                        break;
-                        case 'W':
-                            configFilename = getopt.getOptarg();
-                            break;
-                        case 'U':
-                            configHost = getopt.getOptarg();
-                            break;
-                        case 'R':
-                            // already handled
-                            break;
-                        case 'N':
-                            allowedSymlinks.add(getopt.getOptarg());
-                            break;
-                        case 'n':
-                            runIndex = false;
-                            break;
-                        case 'G':
-                            cfg.setTagsEnabled(true);
-                            break;
-                        case 'H':
-                            refreshHistory = true;
-                            break;
-                        case 'h':
-                            repositories.add(getopt.getOptarg());
-                            break;
-                        case 'D':
-                            cfg.setHistoryCacheInDB(true);
-                            break;
-                        case 'j':
-                            databaseDriver = getopt.getOptarg();
-                            // Should be a full class name, but we also accept
-                            // the shorthands "client" and "embedded". Expand
-                            // the shorthands here.
-                            switch (databaseDriver) {
-                                case "client":
-                                    databaseDriver = DERBY_CLIENT_DRIVER;
-                                    break;
-                                case "embedded":
-                                    databaseDriver = DERBY_EMBEDDED_DRIVER;
-                                    break;
-                            }
-                            break;
-                        case 'u':
-                            databaseURL = getopt.getOptarg();
-                            break;
-                        case 'r':
-                            if (getopt.getOptarg().equalsIgnoreCase(ON)) {
-                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.ON);
-                            } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
-                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.OFF);
-                            } else if (getopt.getOptarg().equalsIgnoreCase(DIRBASED)) {
-                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.DIRBASED);
-                            } else if (getopt.getOptarg().equalsIgnoreCase(UIONLY)) {
-                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.UIONLY);
-                            } else {
-                                System.err.println("ERROR: You should pass either \"on\" or \"off\" or \"uionly\" as argument to -r");
-                                System.err.println("       Ex: \"-r on\" will allow retrieval for remote SCM systems");
-                                System.err.println("           \"-r off\" will ignore SCM for remote systems");
-                                System.err.println("           \"-r dirbased\" will allow retrieval during history index "
-                                    + "only for repositories which allow getting history for directories");
-                                System.err.println("           \"-r uionly\" will support remote SCM for UI only");
-                            }
-                            break;
-                        case 'o':
-                            String CTagsExtraOptionsFile = getopt.getOptarg();
-                            File CTagsFile = new File(CTagsExtraOptionsFile);
-                            if (!(CTagsFile.isFile() && CTagsFile.canRead())) {
-                                System.err.println("ERROR: File '"
-                                        + CTagsExtraOptionsFile
-                                        + "' not found for the -o option");
-                                System.exit(1);
-                            }
-                            System.err.println("INFO: file with extra "
-                                    + "options for ctags: " + CTagsExtraOptionsFile);
-                            cfg.setCTagsExtraOptionsFile(CTagsExtraOptionsFile);
-                            break;
-                        case 'O': {
-                            boolean oldval = cfg.isOptimizeDatabase();
-                            if (getopt.getOptarg().equalsIgnoreCase(ON)) {
-                                cfg.setOptimizeDatabase(true);
-                            } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
-                                cfg.setOptimizeDatabase(false);
-                            } else {
-                                System.err.println("ERROR: You should pass either \"on\" or \"off\" as argument to -O");
-                                System.err.println("       Ex: \"-O on\" will optimize the database as part of the index generation");
-                                System.err.println("           \"-O off\" disable optimization of the index database");
-                            }
-                            if (oldval != cfg.isOptimizeDatabase()) {
-                                optimizedChanged = true;
-                            }
-                            break;
-                        }
-                        case 'v':
-                            cfg.setVerbose(true);
-                            OpenGrokLogger.setOGConsoleLogLevel(Level.INFO);
-                            break;
-                        case 'C':
-                            cfg.setPrintProgress(true);
-                            break;
-
-                        case 's': {
-                            File sourceRoot = new File(getopt.getOptarg());
-                            if (!sourceRoot.isDirectory()) {
-                                System.err.println("ERROR: Source root must be a directory");
-                                System.exit(1);
-                            }
-                            cfg.setSourceRoot(sourceRoot.getCanonicalPath());
-                            break;
-                        }
-                        case 'd': {
-                            File dataRoot = new File(getopt.getOptarg());
-                            if (!dataRoot.exists() && !dataRoot.mkdirs()) {
-                                System.err.println("ERROR: Cannot create data root");
-                                System.exit(1);
-                            }
-                            if (!dataRoot.isDirectory()) {
-                                System.err.println("ERROR: Data root must be a directory");
-                                System.exit(1);
-                            }
-                            cfg.setDataRoot(dataRoot.getCanonicalPath());
-                            break;
-                        }
-                        case 'i':
-                            cfg.getIgnoredNames().add(getopt.getOptarg());
-                            break;
-                        case 'I':
-                            cfg.getIncludedNames().add(getopt.getOptarg());
-                            break;
-                        case 'S':
-                            searchRepositories = true;
-                            break;
-                        case 'Q':
-                            if (getopt.getOptarg().equalsIgnoreCase(ON)) {
-                                cfg.setQuickContextScan(true);
-                            } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
-                                cfg.setQuickContextScan(false);
-                            } else {
-                                System.err.println("ERROR: You should pass either \"on\" or \"off\" as argument to -Q");
-                                System.err.println("       Ex: \"-Q on\" will just scan a \"chunk\" of the file and insert \"[..all..]\"");
-                                System.err.println("           \"-Q off\" will try to build a more accurate list by reading the complete file.");
-                            }
-
-                            break;
-                        case 'm': {
-                            try {
-                                cfg.setRamBufferSize(Double.parseDouble(getopt.getOptarg()));
-                            } catch (NumberFormatException exp) {
-                                System.err.println("ERROR: Failed to parse argument to \"-m\": " + exp.getMessage());
-                                System.exit(1);
-                            }
-                            break;
-                        }
-                        case 'a':
-                            if (getopt.getOptarg().equalsIgnoreCase(ON)) {
-                                cfg.setAllowLeadingWildcard(true);
-                            } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
-                                cfg.setAllowLeadingWildcard(false);
-                            } else {
-                                System.err.println("ERROR: You should pass either \"on\" or \"off\" as argument to -a");
-                                System.err.println("       Ex: \"-a on\" will allow a search to start with a wildcard");
-                                System.err.println("           \"-a off\" will disallow a search to start with a wildcard");
-                                System.exit(1);
-                            }
-
-                            break;
-
                         case 'A': {
                             String[] arg = getopt.getOptarg().split(":");
                             boolean prefix = false;
@@ -399,27 +207,87 @@ public final class Indexer {
                                     log.log(Level.SEVERE, "Stack: ", e.fillInStackTrace());
                                     System.exit(1);
                                 }
-			    }
+                            }
                         }
                         break;
+                        case 'a':
+                            if (getopt.getOptarg().equalsIgnoreCase(ON)) {
+                                cfg.setAllowLeadingWildcard(true);
+                            } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
+                                cfg.setAllowLeadingWildcard(false);
+                            } else {
+                                System.err.println("ERROR: You should pass either \"on\" or \"off\" as argument to -a");
+                                System.err.println("       Ex: \"-a on\" will allow a search to start with a wildcard");
+                                System.err.println("           \"-a off\" will disallow a search to start with a wildcard");
+                                System.exit(1);
+                            }
+
+                            break;
+                        case 'B':
+                            cfg.setUserPage(getopt.getOptarg());
+                            break;
+                        case 'C':
+                            cfg.setPrintProgress(true);
+                            break;
+                        case 'c':
+                            cfg.setCtags(getopt.getOptarg());
+                            break;
+                        case 'D':
+                            cfg.setHistoryCacheInDB(true);
+                            break;
+                        case 'd': {
+                            File dataRoot = new File(getopt.getOptarg());
+                            if (!dataRoot.exists() && !dataRoot.mkdirs()) {
+                                System.err.println("ERROR: Cannot create data root");
+                                System.exit(1);
+                            }
+                            if (!dataRoot.isDirectory()) {
+                                System.err.println("ERROR: Data root must be a directory");
+                                System.exit(1);
+                            }
+                            cfg.setDataRoot(dataRoot.getCanonicalPath());
+                            break;
+                        }
+                        case 'e':
+                            cfg.setGenerateHtml(false);
+                            break;
+                        case 'G':
+                            cfg.setTagsEnabled(true);
+                            break;
+                        case 'H':
+                            refreshHistory = true;
+                            break;
+                        case 'h':
+                            repositories.add(getopt.getOptarg());
+                            break;
+                        case 'I':
+                            cfg.getIncludedNames().add(getopt.getOptarg());
+                            break;
+                        case 'i':
+                            cfg.getIgnoredNames().add(getopt.getOptarg());
+                            break;
+                        case 'j':
+                            databaseDriver = getopt.getOptarg();
+                            // Should be a full class name, but we also accept
+                            // the shorthands "client" and "embedded". Expand
+                            // the shorthands here.
+                            switch (databaseDriver) {
+                                case "client":
+                                    databaseDriver = DERBY_CLIENT_DRIVER;
+                                    break;
+                                case "embedded":
+                                    databaseDriver = DERBY_EMBEDDED_DRIVER;
+                                    break;
+                            }
+                            break;
+                        case 'K':
+                            listRepos = true;
+                            break;
+                        case 'k':
+                            zapCache.add(getopt.getOptarg());
+                            break;
                         case 'L':
                             cfg.setWebappLAF(getopt.getOptarg());
-                            break;
-                        case 'T':
-                            try {
-                                noThreads = Integer.parseInt(getopt.getOptarg());
-                            } catch (NumberFormatException exp) {
-                                System.err.println("ERROR: Failed to parse argument to \"-T\": " + exp.getMessage());
-                                System.exit(1);
-                            }
-                            break;
-                        case 'z':
-                            try {
-                                cfg.setScanningDepth(Integer.parseInt(getopt.getOptarg()));
-                            } catch (NumberFormatException exp) {
-                                System.err.println("ERROR: Failed to parse argument to \"-z\": " + exp.getMessage());
-                                System.exit(1);
-                            }
                             break;
                         case 'l':
                             if (getopt.getOptarg().equalsIgnoreCase(ON)) {
@@ -432,34 +300,169 @@ public final class Indexer {
                                 System.err.println("           \"-l off\" will disable locks in Lucene");
                             }
                             break;
-                        case 'B':
-                            cfg.setUserPage(getopt.getOptarg());
+                        case 'm': {
+                            try {
+                                cfg.setRamBufferSize(Double.parseDouble(getopt.getOptarg()));
+                            } catch (NumberFormatException exp) {
+                                System.err.println("ERROR: Failed to parse argument to \"-m\": " + exp.getMessage());
+                                System.exit(1);
+                            }
                             break;
-                        case 'X':
-                            cfg.setUserPageSuffix(getopt.getOptarg());
+                        }
+                        case 'N':
+                            allowedSymlinks.add(getopt.getOptarg());
                             break;
-                        case 'V':
-                            System.out.println(Info.getFullVersion());
-                            System.exit(0);
+                        case 'n':
+                            runIndex = false;
                             break;
-                        case 'k':
-                            zapCache.add(getopt.getOptarg());
+                        case 'O': {
+                            boolean oldval = cfg.isOptimizeDatabase();
+                            if (getopt.getOptarg().equalsIgnoreCase(ON)) {
+                                cfg.setOptimizeDatabase(true);
+                            } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
+                                cfg.setOptimizeDatabase(false);
+                            } else {
+                                System.err.println("ERROR: You should pass either \"on\" or \"off\" as argument to -O");
+                                System.err.println("       Ex: \"-O on\" will optimize the database as part of the index generation");
+                                System.err.println("           \"-O off\" disable optimization of the index database");
+                            }
+                            if (oldval != cfg.isOptimizeDatabase()) {
+                                optimizedChanged = true;
+                            }
                             break;
-                        case 'K':
-                            listRepos = true;
+                        }
+                        case 'o':
+                            String CTagsExtraOptionsFile = getopt.getOptarg();
+                            File CTagsFile = new File(CTagsExtraOptionsFile);
+                            if (!(CTagsFile.isFile() && CTagsFile.canRead())) {
+                                System.err.println("ERROR: File '"
+                                        + CTagsExtraOptionsFile
+                                        + "' not found for the -o option");
+                                System.exit(1);
+                            }
+                            System.err.println("INFO: file with extra "
+                                    + "options for ctags: " + CTagsExtraOptionsFile);
+                            cfg.setCTagsExtraOptionsFile(CTagsExtraOptionsFile);
                             break;
-                        case '?':
-                            System.err.println(cmdOptions.getUsage());
-                            System.exit(0);
+                        case 'P':
+                            addProjects = true;
+                            break;
+                        case 'p':
+                            defaultProject = getopt.getOptarg();
+                            break;
+                        case 'Q':
+                            if (getopt.getOptarg().equalsIgnoreCase(ON)) {
+                                cfg.setQuickContextScan(true);
+                            } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
+                                cfg.setQuickContextScan(false);
+                            } else {
+                                System.err.println("ERROR: You should pass either \"on\" or \"off\" as argument to -Q");
+                                System.err.println("       Ex: \"-Q on\" will just scan a \"chunk\" of the file and insert \"[..all..]\"");
+                                System.err.println("           \"-Q off\" will try to build a more accurate list by reading the complete file.");
+                            }
+
+                            break;
+                        case 'q':
+                            cfg.setVerbose(false);
+                            OpenGrokLogger.setOGConsoleLogLevel(Level.WARNING);
+                            break;
+                        case 'R':
+                            // already handled
+                            break;
+                        case 'r':
+                            if (getopt.getOptarg().equalsIgnoreCase(ON)) {
+                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.ON);
+                            } else if (getopt.getOptarg().equalsIgnoreCase(OFF)) {
+                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.OFF);
+                            } else if (getopt.getOptarg().equalsIgnoreCase(DIRBASED)) {
+                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.DIRBASED);
+                            } else if (getopt.getOptarg().equalsIgnoreCase(UIONLY)) {
+                                cfg.setRemoteScmSupported(Configuration.RemoteSCM.UIONLY);
+                            } else {
+                                System.err.println("ERROR: You should pass either \"on\" or \"off\" or \"uionly\" as argument to -r");
+                                System.err.println("       Ex: \"-r on\" will allow retrieval for remote SCM systems");
+                                System.err.println("           \"-r off\" will ignore SCM for remote systems");
+                                System.err.println("           \"-r dirbased\" will allow retrieval during history index "
+                                        + "only for repositories which allow getting history for directories");
+                                System.err.println("           \"-r uionly\" will support remote SCM for UI only");
+                            }
+                            break;
+                        case 'S':
+                            searchRepositories = true;
+                            break;
+                        case 's': {
+                            File sourceRoot = new File(getopt.getOptarg());
+                            if (!sourceRoot.isDirectory()) {
+                                System.err.println("ERROR: Source root "
+                                        + getopt.getOptarg() + " must be a directory");
+                                System.exit(1);
+                            }
+                            cfg.setSourceRoot(sourceRoot.getCanonicalPath());
+                            break;
+                        }
+                        case 'T':
+                            try {
+                                noThreads = Integer.parseInt(getopt.getOptarg());
+                            } catch (NumberFormatException exp) {
+                                System.err.println("ERROR: Failed to parse argument to \"-T\": "
+                                        + exp.getMessage());
+                                System.exit(1);
+                            }
                             break;
                         case 't':
                             try {
                                 int tmp = Integer.parseInt(getopt.getOptarg());
                                 cfg.setTabSize(tmp);
                             } catch (NumberFormatException exp) {
-                                System.err.println("ERROR: Failed to parse argument to \"-t\": " + exp.getMessage());
+                                System.err.println("ERROR: Failed to parse argument to \"-t\": "
+                                        + exp.getMessage());
                                 System.exit(1);
                             }
+                            break;
+                        case 'U':
+                            configHost = getopt.getOptarg();
+                            break;
+                        case 'u':
+                            databaseURL = getopt.getOptarg();
+                            break;
+                        case 'V':
+                            System.out.println(Info.getFullVersion());
+                            System.exit(0);
+                            break;
+                        case 'v':
+                            cfg.setVerbose(true);
+                            OpenGrokLogger.setOGConsoleLogLevel(Level.INFO);
+                            break;
+                        case 'W':
+                            configFilename = getopt.getOptarg();
+                            break;
+                        case 'w': {
+                            String webapp = getopt.getOptarg();
+                            if (webapp.charAt(0) != '/' && !webapp.startsWith("http")) {
+                                webapp = "/" + webapp;
+                            }
+                            if (webapp.endsWith("/")) {
+                                cfg.setUrlPrefix(webapp + "s?");
+                            } else {
+                                cfg.setUrlPrefix(webapp + "/s?");
+                            }
+                        }
+                        break;
+                        case 'X':
+                            cfg.setUserPageSuffix(getopt.getOptarg());
+                            break;
+                        case 'z':
+                            try {
+                                cfg.setScanningDepth(Integer.parseInt(getopt.getOptarg()));
+                            } catch (NumberFormatException exp) {
+                                System.err.println("ERROR: Failed to parse argument to \"-z\": "
+                                        + exp.getMessage());
+                                System.exit(1);
+                            }
+                            break;
+                        case '?':
+                            System.err.println(cmdOptions.getUsage());
+                            System.exit(0);
                             break;
                         default:
                             System.err.println("Internal Error - Unimplemented cmdline option: " + (char) cmd);
@@ -467,8 +470,8 @@ public final class Indexer {
                     }
                 }
 
-                List<Class<? extends Repository>> repositoryClasses =
-                        RepositoryFactory.getRepositoryClasses();
+                List<Class<? extends Repository>> repositoryClasses
+                        = RepositoryFactory.getRepositoryClasses();
                 for (Class<? extends Repository> clazz : repositoryClasses) {
                     try {
                         Field f = clazz.getDeclaredField("CMD_PROPERTY_KEY");
@@ -479,13 +482,6 @@ public final class Indexer {
                         }
                     } catch (Exception e) {
                         // don't care
-                    }
-                }
-                int optind = getopt.getOptind();
-                if (optind != -1) {
-                    while (optind < argv.length) {
-                        subFiles.add(argv[optind]);
-                        ++optind;
                     }
                 }
 
@@ -538,10 +534,56 @@ public final class Indexer {
                 allowedSymlinks.addAll(cfg.getAllowedSymlinks());
                 cfg.setAllowedSymlinks(allowedSymlinks);
 
-                //Set updated configuration in RuntimeEnvironment
-                RuntimeEnvironment env = RuntimeEnvironment.getInstance();
-                env.setConfiguration(cfg);
+                // Assemble the unprocessed command line arguments (possibly
+                // a list of paths). This will be used to perform more fine
+                // grained checking in invalidateRepositories().
+                int optind = getopt.getOptind();
+                if (optind != -1) {
+                    while (optind < argv.length) {
+                        subFilesList.add(cfg.getSourceRoot() + argv[optind++]);
+                    }
+                }
 
+                // Set updated configuration in RuntimeEnvironment.
+                RuntimeEnvironment env = RuntimeEnvironment.getInstance();
+                env.setConfiguration(cfg, subFilesList);
+
+                /*
+                 * Add paths to directories under source root. If projects
+                 * are enabled the path should correspond to a project because
+                 * project path is necessary to correctly set index directory
+                 * (otherwise the index files will end up in index data root
+                 * directory and not per project data root directory).
+                 * For the check we need to have 'env' already set.
+                 */
+                for (String path : subFilesList) {
+                    path = path.substring(env.getSourceRootPath().length());
+                    if (env.hasProjects()) {
+                        // The paths need to correspond to a project.
+                        if (Project.getProject(path) != null) {
+                            subFiles.add(path);
+                        } else {
+                            System.err.println("The path " + path
+                                    + " does not correspond to a project");
+                        }
+                    } else {
+                        subFiles.add(path);
+                    }
+                }
+
+                if (!subFilesList.isEmpty() && subFiles.isEmpty()) {
+                    System.err.println("None of the paths were added, exiting");
+                    System.exit(1);
+                }
+
+                // Issue a warning when JDBC is used with renamed file handling.
+                // This causes heavy slowdown when used with JavaDB (issue #774).
+                if (env.isHandleHistoryOfRenamedFiles() && cfg.isHistoryCacheInDB()) {
+                    System.out.println("History stored in DB and renamed file "
+                            + "handling is on - possible performance degradation");
+                }
+
+                // Get history first.
                 getInstance().prepareIndexer(env, searchRepositories, addProjects,
                         defaultProject, configFilename, refreshHistory,
                         listFiles, createDict, subFiles, repositories,
@@ -549,11 +591,15 @@ public final class Indexer {
                 if (listRepos || !zapCache.isEmpty()) {
                     return;
                 }
+
+                // And now index it all.
                 if (runIndex || (optimizedChanged && env.isOptimizeDatabase())) {
                     IndexChangedListener progress = new DefaultIndexChangedListener();
                     getInstance().doIndexerExecution(update, noThreads, subFiles,
                             progress);
                 }
+
+                // Finally send new configuration to the web application.
                 getInstance().sendToConfigHost(env, configHost);
             } catch (IndexerException ex) {
                 log.log(Level.SEVERE, "Exception running indexer", ex);
@@ -563,16 +609,20 @@ public final class Indexer {
                 System.err.println("Exception: " + e.getLocalizedMessage());
                 log.log(Level.SEVERE, "Unexpected Exception", e);
                 System.exit(1);
-            } 
-            finally {
+            } finally {
                 stats.report(log);
             }
         }
-
     }
 
-    // PMD wants us to use length() > 0 && charAt(0) instead of startsWith()
-    // for performance. We prefer clarity over performance here, so silence it.
+    /*
+     * This is the first phase of the indexing where history cache is being
+     * generated for repositories (at least for those which support getting
+     * history per directory).
+     *
+     * PMD wants us to use length() > 0 && charAt(0) instead of startsWith()
+     * for performance. We prefer clarity over performance here, so silence it.
+     */
     @SuppressWarnings("PMD.SimplifyStartsWith")
     public void prepareIndexer(RuntimeEnvironment env,
             boolean searchRepositories,
@@ -585,7 +635,7 @@ public final class Indexer {
             List<String> subFiles,
             List<String> repositories,
             List<String> zapCache,
-            boolean listRepoPathes) throws IndexerException, IOException {
+            boolean listRepoPaths) throws IndexerException, IOException {
 
         if (env.getDataRootPath() == null) {
             throw new IndexerException("ERROR: Please specify a DATA ROOT path");
@@ -595,23 +645,23 @@ public final class Indexer {
             throw new IndexerException("ERROR: please specify a SRC_ROOT with option -s !");
         }
 
-        if (!env.validateExuberantCtags()) {
+        if (zapCache.isEmpty() && !env.validateExuberantCtags()) {
             throw new IndexerException("Didn't find Exuberant Ctags");
         }
         if (zapCache == null) {
             throw new IndexerException("Internal error, zapCache shouldn't be null");
         }
 
-        if (searchRepositories || listRepoPathes || !zapCache.isEmpty()) {
+        if (searchRepositories || listRepoPaths || !zapCache.isEmpty()) {
             log.log(Level.INFO, "Scanning for repositories...");
             long start = System.currentTimeMillis();
             HistoryGuru.getInstance().addRepositories(env.getSourceRootPath());
             long time = (System.currentTimeMillis() - start) / 1000;
             log.log(Level.INFO, "Done scanning for repositories ({0}s)", time);
-            if (listRepoPathes || !zapCache.isEmpty()) {
+            if (listRepoPaths || !zapCache.isEmpty()) {
                 List<RepositoryInfo> repos = env.getRepositories();
                 String prefix = env.getSourceRootPath();
-                if (listRepoPathes) {
+                if (listRepoPaths) {
                     if (repos.isEmpty()) {
                         System.out.println("No repositories found.");
                         return;
@@ -737,9 +787,16 @@ public final class Indexer {
         }
     }
 
+    /*
+     * This is the second phase of the indexer which generates Lucene index
+     * by passing source code files through Exuberant ctags, generating xrefs
+     * and storing data from the source files in the index (along with history,
+     * if any).
+     */
     public void doIndexerExecution(final boolean update, int noThreads, List<String> subFiles,
             IndexChangedListener progress)
             throws IOException {
+        Statistics elapsed = new Statistics();
         RuntimeEnvironment env = RuntimeEnvironment.getInstance().register();
         log.info("Starting indexing");
 
@@ -818,9 +875,9 @@ public final class Indexer {
             RuntimeEnvironment.destroyRenamedHistoryExecutor();
         } catch (InterruptedException ex) {
             log.log(Level.SEVERE,
-                "destroying of renamed thread pool failed", ex);
+                    "destroying of renamed thread pool failed", ex);
         }
-        log.info("Done indexing");
+        elapsed.report(log, "Done indexing data of all repositories");
     }
 
     public void sendToConfigHost(RuntimeEnvironment env, String configHost) {
@@ -832,7 +889,8 @@ public final class Indexer {
                     InetAddress host = InetAddress.getByName(cfg[0]);
                     env.writeConfiguration(host, Integer.parseInt(cfg[1]));
                 } catch (Exception ex) {
-                    log.log(Level.SEVERE, "Failed to send configuration to " + configHost + " (is web application server running with opengrok deployed?)", ex);
+                    log.log(Level.SEVERE, "Failed to send configuration to "
+                            + configHost + " (is web application server running with opengrok deployed?)", ex);
                 }
             } else {
                 log.severe("Syntax error: ");

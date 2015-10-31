@@ -60,7 +60,7 @@ function domReadyMast() {
         }
     }
     if (document.annotate) {
-        $('a[class=r]').tooltip({ left: 5, showURL: false });
+        $('a.r').tooltip({ left: 5, showURL: false });
         var toggle_js = document.getElementById('toggle-annotate-by-javascript');
         var toggle_ss = document.getElementById('toggle-annotate');
 
@@ -418,17 +418,17 @@ function goFirstProject() {
 
 function clearSearchFrom() {
     $("#sbox :input[type=text]").each(
-        function() {            
-                $(this).attr("value", "");            
+        function() {
+                $(this).attr("value", "");
         }
-    );    
+    );
     $("#type :selected").removeAttr("selected");
 }
 
 function checkEnter(event) {
     concat='';
     $("#sbox :input[type=text]").each(
-        function() {            
+        function() {
                 concat+=$.trim($(this).val());
         }
     );
@@ -438,4 +438,180 @@ function checkEnter(event) {
     } else if (event.keyCode == '13') {
         $("#sbox").submit();
     }
+}
+
+// Intelligence Window code starts from here
+document.onmousemove = function(event) {
+    event = event || window.event; // cover IE
+    document.intelliWindowMouseX = event.clientX;
+    document.intelliWindowMouseY = event.clientY;
+};
+
+$(document).keypress(function(e) {
+    if (document.activeElement.id === 'search' ||
+        typeof document.intelliWindow === 'undefined') {
+        return true;
+    }
+
+    if (e.which === 49) { // '1' pressed
+        if (document.intelliWindow.className === "intelli_window_style") {
+            hideIntelliWindow();
+        } else if (document.intelliWindow.className === "intelli_window_style_hide") {
+            showIntelliWindow();
+        }
+    }
+    if (e.which === 50) { // '2' pressed
+        var symbol = document.intelliWindow.symbol;
+        var highlighted_symbols_with_same_name = $("a").filter(function(index) {
+            var bgcolor = $(this).css("background-color");
+            return $(this).text() === symbol &&
+                (bgcolor === "rgb(255, 215, 0)" || bgcolor === "rgb(255,215,0)" || bgcolor === "#ffd700"); // gold.  the last two cover IE
+        })
+        if (highlighted_symbols_with_same_name.length === 0) {
+            highlightSymbol(symbol);
+        } else {
+            unhighlightSymbol(symbol);
+        }
+    }
+    return true;
+});
+
+function onMouseOverSymbol(symbol, symbolType) {
+    updateIntelliWindow(symbol, symbolType);
+}
+
+function updateIntelliWindow(symbol, symbolType) {
+    if (!document.intelliWindow) {
+        createIntelliWindow();
+    }
+    var header = [
+        createCapitionHTML(),
+        createSymbolHTML(symbol),
+        createDescriptionHTML(symbolType),
+    ].join("");
+
+    document.intelliWindow.innerHTML = header + createActionHTML(symbol, symbolType);
+    document.intelliWindow.symbol = symbol;
+}
+
+function showIntelliWindow() {
+    var iw = document.intelliWindow;
+    iw.className = "intelli_window_style";
+
+    var top;
+    var left;
+    if (document.intelliWindowMouseY + iw.offsetHeight + 20 > $(window).height()) {
+        top = $(window).height() - iw.offsetHeight - 20;
+    } else {
+        top = document.intelliWindowMouseY;
+    }
+    if (document.intelliWindowMouseX + iw.offsetWidth + 20 > $(window).width()) {
+        left = $(window).width() - iw.offsetWidth - 20;
+    } else {
+        left = document.intelliWindowMouseX;
+    }
+    iw.style.top = top + "px";
+    iw.style.left = left + "px";
+}
+
+function createIntelliWindow() {
+    document.intelliWindow = document.createElement("div");
+    document.intelliWindow.id = "intelli_win";
+    document.body.appendChild(document.intelliWindow);
+    hideIntelliWindow();
+}
+
+function hideIntelliWindow() {
+    document.intelliWindow.className = "intelli_window_style_hide";
+}
+
+function createCapitionHTML() {
+    return '<a onclick="hideIntelliWindow()">[Close]</a><br/><b>Intelligence Window</b><br/>';
+}
+
+function createSymbolHTML(symbol) {
+    return "<i><h2>" + symbol + "</h2></i>";
+}
+
+function createDescriptionHTML(symbolType) {
+    switch (symbolType) {
+        case "def":
+            return "A declaration or definition.<hr/>";
+        case "defined-in-file":
+            return "A symbol declared or defined in this file.<hr/>";
+        case "undefined-in-file":
+            return "A symbol declared or defined elsewhere.<hr/>";
+        default:
+            // should not happen
+            return "Something I have no idea about.<hr/>";
+    }
+}
+
+function createActionHTML(symbol, symbolType) {
+    var escapedSymbol = escapeSingleQuote(symbol);
+    var project = $("input[name='project']").val();
+    return [
+        "In current file:<br/><ul>",
+        "<li><a onclick=\"highlightSymbol('", escapedSymbol, "')\">Highlight <b><i>", symbol,
+            "</i></b></a>.</li>",
+        "<li><a onclick=\"unhighlightSymbol('", escapedSymbol, "')\">Unhighlight <b><i>", symbol,
+            "</i></b></a>.</li>",
+        "<li><a onclick=\"unhighlightAll()\">Unhighlight all.</li></ul>",
+        "In project ", project, ":<br/><ul>",
+        "<li><a onclick=\"intelliWindowSearch('defs=', '", escapedSymbol, "', '", symbolType,
+            "')\">Search for definitions of <i><b>", symbol,
+            "</b></i>.</a></li>",
+        "<li><a onclick=\"intelliWindowSearch('refs=', '", escapedSymbol, "', '", symbolType,
+            "')\">Search for references of <i><b>", symbol,
+            "</b></i>.</a></li>",
+        "<li><a onclick=\"intelliWindowSearch('q=', '", escapedSymbol, "', '", symbolType,
+            "')\">Do a full search with <i><b>", symbol,
+            "</b></i>.</a></li>",
+        "<li><a onclick=\"intelliWindowSearch('path=', '", escapedSymbol, "', '", symbolType,
+            "')\">Search for file names that contain <i><b>", symbol,
+            "</b></i>.</a></li></ul>",
+        "<a onclick=\"googleSymbol('", escapedSymbol, "')\">Google <b><i>", symbol, "</i></b>.</a>"
+    ].join("");
+}
+
+function highlightSymbol(symbol) {
+    var symbols_with_same_name = $("a").filter(function(index) {
+        return $(this).text() === symbol;
+    })
+    symbols_with_same_name.css("background-color",  "rgb(255, 215, 0)"); // gold
+    return false;
+}
+
+function unhighlightSymbol(symbol) {
+    var symbols_with_same_name = $("a").filter(function(index) {
+        return $(this).text() === symbol;
+    })
+    symbols_with_same_name.css("background-color", "rgb(255, 255, 255)"); // white
+    return false;
+}
+
+function unhighlightAll() {
+    $("a").filter(function(index) {
+        var bgcolor = $(this).css("background-color");
+        return bgcolor === "rgb(255, 215, 0)" || bgcolor === "rgb(255,215,0)" || bgcolor === "#ffd700";  // gold.  the last two cover IE
+    }).css("background-color", "rgb(255, 255, 255)"); // white
+    return false;
+}
+
+function intelliWindowSearch(param, symbol, symbolType) {
+    var contextPath = $("#contextpath").val();
+    var project = $("input[name='project']").val();
+    var url = contextPath + "/s?" + param + symbol + "&project=" + project;
+    window.open(url, '_blank');
+    return false;
+}
+
+function googleSymbol(symbol) {
+    var url = "https://www.google.com/search?q=" + symbol;
+    window.open(url, '_blank');
+    return false;
+}
+
+function escapeSingleQuote(string) {
+    return string.replace("'", "\\'");
 }

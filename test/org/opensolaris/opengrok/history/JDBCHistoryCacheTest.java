@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 
 package org.opensolaris.opengrok.history;
@@ -34,9 +34,6 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertFalse;
-import static junit.framework.Assert.assertTrue;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
@@ -88,6 +85,9 @@ public class JDBCHistoryCacheTest extends TestCase {
 
         // Mercurial parser needs to know if the history is stored in DB.
         RuntimeEnvironment.getInstance().setStoreHistoryCacheInDB(true);
+
+        // The tests expect support for renamed files.
+        RuntimeEnvironment.getInstance().setHandleHistoryOfRenamedFiles(true);
     }
 
     /**
@@ -496,7 +496,7 @@ public class JDBCHistoryCacheTest extends TestCase {
         List<HistoryEntry> dirHistory =
                 cache.get(reposRoot, repos, false).getHistoryEntries();
         assertEquals("Size of history", 10, dirHistory.size());
-        assertEquals("tip", dirHistory.get(0).getTags());
+        assertEquals(null, dirHistory.get(0).getTags());
         assertNull(dirHistory.get(1).getTags());
         assertEquals("start_of_novel", dirHistory.get(2).getTags());
         assertNull(dirHistory.get(3).getTags());
@@ -505,14 +505,14 @@ public class JDBCHistoryCacheTest extends TestCase {
                 cache.get(new File(reposRoot, "novel.txt"),
                           repos, false).getHistoryEntries();
         assertEquals("Size of history", 6, novelHistory.size());
-        assertEquals("tip", novelHistory.get(0).getTags());
+        assertEquals(null, novelHistory.get(0).getTags());
         assertEquals("start_of_novel", novelHistory.get(1).getTags());
 
         List<HistoryEntry> maincHistory =
                 cache.get(new File(reposRoot, "main.c"),
                           repos, false).getHistoryEntries();
         assertEquals("Size of history", 2, maincHistory.size());
-        assertEquals("tip, start_of_novel", maincHistory.get(0).getTags());
+        assertEquals("start_of_novel", maincHistory.get(0).getTags());
         assertNull(maincHistory.get(1).getTags());
     }
 }

@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 package org.opensolaris.opengrok.configuration;
 
@@ -64,8 +64,7 @@ public final class RuntimeEnvironment {
     private static RuntimeEnvironment instance = new RuntimeEnvironment();
     private static ExecutorService historyExecutor = null;
     private static ExecutorService historyRenamedExecutor = null;
-    private static boolean RenamedEnabled = true;
- 
+
     /* Get thread pool used for top-level repository history generation. */
     public static synchronized ExecutorService getHistoryExecutor() {
         if (historyExecutor == null) {
@@ -92,7 +91,7 @@ public final class RuntimeEnvironment {
 
         return historyExecutor;
     }
- 
+
     /* Get thread pool used for history generation of renamed files. */
     public static synchronized ExecutorService getHistoryRenamedExecutor() {
         if (historyRenamedExecutor == null) {
@@ -116,14 +115,14 @@ public final class RuntimeEnvironment {
                     }
                 });
         }
- 
+
         return historyRenamedExecutor;
     }
 
     public static synchronized void freeHistoryExecutor() {
         historyExecutor = null;
     }
- 
+
     public static synchronized void destroyRenamedHistoryExecutor() throws InterruptedException {
         if (historyRenamedExecutor != null) {
             historyRenamedExecutor.shutdown();
@@ -132,19 +131,6 @@ public final class RuntimeEnvironment {
             historyRenamedExecutor.awaitTermination(1, TimeUnit.MINUTES);
             historyRenamedExecutor = null;
         }
-    }
-
-    /*
-     * Is handling of renamed files turned on ?
-     */
-    public static boolean RenamedFilesEnabled() {
-        String disabled =
-            System.getProperty("org.opensolaris.opengrok.history.RenamedHandlingDisabled");
-        if (disabled != null) {
-            RenamedEnabled = false;
-        }
-
-        return (RenamedEnabled);
     }
 
     /**
@@ -396,7 +382,7 @@ public final class RuntimeEnvironment {
 
         executor.exec(false);
         String output = executor.getOutputString();
-        if (output == null || output.indexOf("Exuberant Ctags") == -1) {
+        if (output == null || ( output.indexOf("Exuberant Ctags") == -1 && output.indexOf("Universal Ctags") == -1 ) ) {
             log.log(Level.SEVERE, "Error: No Exuberant Ctags found in PATH !\n"
                     + "(tried running " + "{0}" + ")\n"
                     + "Please use option -c to specify path to a good "
@@ -407,6 +393,23 @@ public final class RuntimeEnvironment {
         }
 
         return ret;
+    }
+
+    /**
+     * Are we using Universal ctags?
+     *
+     * @return true if we are using Universal ctags
+     */
+    public boolean isUniversalCtags() {
+        boolean ret = false;
+        Executor executor = new Executor(new String[]{getCtags(), "--version"});
+
+        executor.exec(false);
+        String output = executor.getOutputString();
+        if (output.indexOf("Universal Ctags") != -1 ) {
+	  ret = true;
+	}
+	return ret;
     }
 
     /**
@@ -544,7 +547,7 @@ public final class RuntimeEnvironment {
         return threadConfig.get().getDefaultProject();
     }
 
-    /**     
+    /**
      *
      * @return at what size (in MB) we should flush the buffer
      */
@@ -808,13 +811,21 @@ public final class RuntimeEnvironment {
     public void setIndexVersionedFilesOnly(boolean indexVersionedFilesOnly) {
         threadConfig.get().setIndexVersionedFilesOnly(indexVersionedFilesOnly);
     }
-    
+
     public boolean isTagsEnabled() {
         return threadConfig.get().isTagsEnabled();
     }
-    
+
     public void setTagsEnabled(boolean tagsEnabled) {
         threadConfig.get().setTagsEnabled(tagsEnabled);
+    }
+
+    public boolean isScopesEnabled() {
+        return threadConfig.get().isScopesEnabled();
+    }
+
+    public void setScopesEnabled(boolean scopesEnabled) {
+        threadConfig.get().setScopesEnabled(scopesEnabled);
     }
 
     public Date getDateForLastIndexRun() {
@@ -887,6 +898,22 @@ public final class RuntimeEnvironment {
         threadConfig.get().setChattyStatusPage(chatty);
     }
 
+    public void setFetchHistoryWhenNotInCache(boolean nofetch) {
+        threadConfig.get().setFetchHistoryWhenNotInCache(nofetch);
+    }
+
+    public boolean isFetchHistoryWhenNotInCache() {
+        return threadConfig.get().isFetchHistoryWhenNotInCache();
+    }
+
+    public void setHandleHistoryOfRenamedFiles(boolean enable) {
+        threadConfig.get().setHandleHistoryOfRenamedFiles(enable);
+    }
+
+    public boolean isHandleHistoryOfRenamedFiles() {
+        return threadConfig.get().isHandleHistoryOfRenamedFiles();
+    }
+
     /**
      * Read an configuration file and set it as the current configuration.
      *
@@ -928,7 +955,15 @@ public final class RuntimeEnvironment {
     public void setConfiguration(Configuration configuration) {
         this.configuration = configuration;
         register();
-        HistoryGuru.getInstance().invalidateRepositories(configuration.getRepositories());
+        HistoryGuru.getInstance().invalidateRepositories(
+            configuration.getRepositories());
+    }
+
+    public void setConfiguration(Configuration configuration, List<String> subFileList) {
+        this.configuration = configuration;
+        register();
+        HistoryGuru.getInstance().invalidateRepositories(
+            configuration.getRepositories(), subFileList);
     }
 
     public Configuration getConfiguration() {

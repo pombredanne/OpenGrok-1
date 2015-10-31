@@ -18,13 +18,12 @@
  */
 
 /*
- * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
  * Use is subject to license terms.
  */
 package org.opensolaris.opengrok.analysis;
 
 import java.io.IOException;
-import java.io.Reader;
 import java.io.Writer;
 import java.util.logging.Level;
 import org.apache.lucene.analysis.Analyzer;
@@ -53,6 +52,7 @@ import org.opensolaris.opengrok.configuration.Project;
 public class FileAnalyzer extends Analyzer {
 
     protected Project project;
+    protected boolean scopesEnabled;
     private final FileAnalyzerFactory factory;
 
     /**
@@ -70,7 +70,7 @@ public class FileAnalyzer extends Analyzer {
         /** not xrefed - summarizer context from original file */
         HTML("h")
         ;
-        private String typeName;
+        private final String typeName;
         private Genre(String typename) {
             this.typeName = typename;
         }
@@ -110,6 +110,10 @@ public class FileAnalyzer extends Analyzer {
     public void setProject(Project project) {
         this.project = project;
     }
+    
+    public void setScopesEnabled(boolean scopesEnabled) {
+        this.scopesEnabled = scopesEnabled;
+    }
 
     /**
      * Get the factory which created this analyzer.
@@ -123,7 +127,9 @@ public class FileAnalyzer extends Analyzer {
         return factory.getGenre();
     }    
 
-    /** Creates a new instance of FileAnalyzer */
+    /** Creates a new instance of FileAnalyzer
+     * @param factory name of factory to be used 
+     */
     public FileAnalyzer(FileAnalyzerFactory factory) {
         super(Analyzer.PER_FIELD_REUSE_STRATEGY);
         this.factory = factory;        
@@ -154,24 +160,25 @@ public class FileAnalyzer extends Analyzer {
      * @param doc the Lucene document
      * @param src the input data source
      * @param xrefOut where to write the xref (may be {@code null})
+     * @throws IOException if any I/O error
      */
     public void analyze(Document doc, StreamSource src, Writer xrefOut) throws IOException {
         // not used
     }
         
     @Override
-    public TokenStreamComponents createComponents(String fieldName, Reader reader) {                        
+    public TokenStreamComponents createComponents(String fieldName) {        
         switch (fieldName) {
             case "full":
-                return new TokenStreamComponents(new PlainFullTokenizer(reader));
+                return new TokenStreamComponents(new PlainFullTokenizer());
             case "path":
             case "project":
-                return new TokenStreamComponents(new PathTokenizer(reader));
+                return new TokenStreamComponents(new PathTokenizer());
             case "hist":
-                return new HistoryAnalyzer().createComponents(fieldName, reader);
+                return new HistoryAnalyzer().createComponents(fieldName);
             case "refs":
             case "defs":
-                return new TokenStreamComponents(new PlainSymbolTokenizer(reader));
+                return new TokenStreamComponents(new PlainSymbolTokenizer());
             default:
                 OpenGrokLogger.getLogger().log(
                         Level.WARNING, "Have no analyzer for: {0}", fieldName);

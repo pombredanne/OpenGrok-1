@@ -28,6 +28,8 @@ usually it's overall coverage above 80%)
 
 (jenkins can help here, see README.txt on setup)
 
+The release is OK, once above is fullfilled to our satisfaction.
+
 3) tag the build used for release so we can get back to it:
 
    git tag 0.XYZ
@@ -41,7 +43,37 @@ to produce the archive
 
   ant dist
   ant package
+	
+The command above creates both formats of package .pkg and .p5p into the directory dist
+
+
+Note that for the IPS package *.p5p the version names are translated this way:
+0.12          ~       0.12.0.1.0
+0.<n>         ~       0.<n>.0.1.0
+...
+
+0.12-rc1      ~       0.12.0.0.1
+0.12-rc<i>    ~       0.12.0.0.<i>
+...
+
+(Note that the release candidate must follow imediately after the basic version number (0.12))
+
+
+0.12.1        ~       0.12.1.0.0
+0.12.<j>      ~       0.12.<j>.0.0
+...
+
+0.12.0.1      ~       0.12.0.1.1
+0.12.0.<k>    ~       0.12.0.1.<k>
+...
 
 5) Upload them using https://github.com/OpenGrok/OpenGrok/releases
 
-The release is OK, once above is fullfilled to our satisfaction.
+6) Modify the download links on http://opengrok.github.io/OpenGrok/
+
+   git fetch --all
+   git checkout gh-pages
+   < now edit index.html >
+   git commit index.html
+   git push
+

@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 
 package org.opensolaris.opengrok.analysis;
@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.opensolaris.opengrok.configuration.RuntimeEnvironment;
 import org.opensolaris.opengrok.util.IOUtils;
 import org.opensolaris.opengrok.util.Interner;
 
@@ -67,6 +68,7 @@ public class Ctags {
     }
 
     private void initialize() throws IOException {
+        RuntimeEnvironment env = RuntimeEnvironment.getInstance();
         if (processBuilder == null) {
             List<String> command = new ArrayList<String>();
             String commandStr = "";
@@ -93,18 +95,46 @@ public class Ctags {
             command.add("--langmap=sql:+.pls"); // RFE #19208
             command.add("--langmap=sql:+.pld"); // RFE #19208
             command.add("--langmap=sql:+.pks"); // RFE #19208 ?
+
+            //Ideally all below should be in ctags, or in outside config file,
+            //we might run out of command line SOON
+
+            //Also note, that below ctags definitions HAVE to be in POSIX
+            //otherwise the regexp will not work on some platforms
+            //on Solaris regexp.h used is different than on linux (gnu regexp)
+            //http://en.wikipedia.org/wiki/Regular_expression#POSIX_basic_and_extended
+
             command.add("--langdef=scala"); // below is bug 61 to get full scala support
             command.add("--langmap=scala:.scala");
-            command.add("--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*(private|protected)?[ \t]*class[ \t]+([a-zA-Z0-9_]+)/\4/c,classes/");
-            command.add("--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*(private|protected)?[ \t]*object[ \t]+([a-zA-Z0-9_]+)/\4/c,objects/");
-            command.add("--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*(private|protected)?[ \t]*case class[ \t]+([a-zA-Z0-9_]+)/\4/c,case classes/");
-            command.add("--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*(private|protected)?[ \t]*case object[ \t]+([a-zA-Z0-9_]+)/\4/c,case objects/");
-            command.add("--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*(private|protected)?[ \t]*trait[ \t]+([a-zA-Z0-9_]+)/\4/t,traits/");
-            command.add("--regex-scala=/^[ \t]*type[ \t]+([a-zA-Z0-9_]+)/\1/T,types/");
-            command.add("--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*def[ \t]+([a-zA-Z0-9_]+)/\3/m,methods/");
-            command.add("--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*val[ \t]+([a-zA-Z0-9_]+)/\3/l,constants/");
-            command.add("--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*var[ \t]+([a-zA-Z0-9_]+)/\3/l,variables/");
-            command.add("--regex-scala=/^[ \t]*package[ \t]+([a-zA-Z0-9_.]+)/\1/p,packages/");
+            command.add("--regex-scala=/^[[:space:]]*((abstract|final|sealed|implicit|lazy)[[:space:]]*)*(private|protected)?[[:space:]]*class[[:space:]]+([a-zA-Z0-9_]+)/\\4/c,classes/");
+            command.add("--regex-scala=/^[[:space:]]*((abstract|final|sealed|implicit|lazy)[[:space:]]*)*(private|protected)?[[:space:]]*object[[:space:]]+([a-zA-Z0-9_]+)/\\4/c,objects/");
+            command.add("--regex-scala=/^[[:space:]]*((abstract|final|sealed|implicit|lazy)[[:space:]]*)*(private|protected)?[[:space:]]*case class[[:space:]]+([a-zA-Z0-9_]+)/\\4/c,case classes/");
+            command.add("--regex-scala=/^[[:space:]]*((abstract|final|sealed|implicit|lazy)[[:space:]]*)*(private|protected)?[[:space:]]*case object[[:space:]]+([a-zA-Z0-9_]+)/\\4/c,case objects/");
+            command.add("--regex-scala=/^[[:space:]]*((abstract|final|sealed|implicit|lazy)[[:space:]]*)*(private|protected)?[[:space:]]*trait[[:space:]]+([a-zA-Z0-9_]+)/\\4/t,traits/");
+            command.add("--regex-scala=/^[[:space:]]*type[[:space:]]+([a-zA-Z0-9_]+)/\\1/T,types/");
+            command.add("--regex-scala=/^[[:space:]]*((abstract|final|sealed|implicit|lazy)[[:space:]]*)*def[[:space:]]+([a-zA-Z0-9_]+)/\\3/m,methods/");
+            command.add("--regex-scala=/^[[:space:]]*((abstract|final|sealed|implicit|lazy)[[:space:]]*)*val[[:space:]]+([a-zA-Z0-9_]+)/\\3/l,constants/");
+            command.add("--regex-scala=/^[[:space:]]*((abstract|final|sealed|implicit|lazy)[[:space:]]*)*var[[:space:]]+([a-zA-Z0-9_]+)/\\3/l,variables/");
+            command.add("--regex-scala=/^[[:space:]]*package[[:space:]]+([a-zA-Z0-9_.]+)/\\1/p,packages/");
+
+            command.add("--langdef=haskell"); // below was added with #912
+            command.add("--langmap=haskell:.hs.hsc");
+            command.add("--regex-haskell=/^[[:space:]]*class[[:space:]]+([a-zA-Z0-9_]+)/\\1/c,classes/");
+            command.add("--regex-haskell=/^[[:space:]]*data[[:space:]]+([a-zA-Z0-9_]+)/\\1/t,types/");
+            command.add("--regex-haskell=/^[[:space:]]*newtype[[:space:]]+([a-zA-Z0-9_]+)/\\1/t,types/");
+            command.add("--regex-haskell=/^[[:space:]]*type[[:space:]]+([a-zA-Z0-9_]+)/\\1/t,types/");
+            command.add("--regex-haskell=/^([a-zA-Z0-9_]+).*[[:space:]]+={1}[[:space:]]+/\\1/f,functions/");
+            command.add("--regex-haskell=/[[:space:]]+([a-zA-Z0-9_]+).*[[:space:]]+={1}[[:space:]]+/\\1/f,functions/");
+            command.add("--regex-haskell=/^(let|where)[[:space:]]+([a-zA-Z0-9_]+).*[[:space:]]+={1}[[:space:]]+/\\2/f,functions/");
+            command.add("--regex-haskell=/[[:space:]]+(let|where)[[:space:]]+([a-zA-Z0-9_]+).*[[:space:]]+={1}[[:space:]]+/\\2/f,functions/");
+
+	    if (!env.isUniversalCtags()) {
+		command.add("--langdef=golang");
+		command.add("--langmap=golang:.go");
+		command.add("--regex-golang=/func([ \t]+([^)]+))?[ \t]+([a-zA-Z0-9_]+)/\2/f,func/");
+		command.add("--regex-golang=/var[ \t]+([a-zA-Z_][a-zA-Z0-9_]+)/\1/v,var/");
+		command.add("--regex-golang=/type[ \t]+([a-zA-Z_][a-zA-Z0-9_]+)/\1/t,type/");
+	    }
 
             /* Add extra command line options for ctags. */
             if (CTagsExtraOptionsFile != null) {
@@ -112,9 +142,11 @@ public class Ctags {
                 command.add("--options=" + CTagsExtraOptionsFile);
             }
 
+            StringBuilder sb = new StringBuilder();
             for (String s : command) {
-                commandStr += s + " ";
+                sb.append(s).append(" ");
             }
+            commandStr = sb.toString();
             log.log(Level.FINE, "Executing ctags command [" + commandStr + "]");
 
             processBuilder = new ProcessBuilder(command);
@@ -249,7 +281,7 @@ public class Ctags {
 
                 final String type =
                         inher == null ? kind : kind + " in " + inher;
-                addTag(defs, seenSymbols, lnum, def, type, match);
+                addTag(defs, seenSymbols, lnum, def, type, match, inher);
                 if (signature != null) {
                     //TODO if some languages use different character for separating arguments, below needs to be adjusted
                     String[] args = signature.split(",");
@@ -264,7 +296,7 @@ public class Ctags {
                              if (name.length()>0) {
                               //log.fine("Param Def = "+ string);
                               addTag(defs, seenSymbols, lnum, name, "argument",
-                                     def.trim() + signature.trim());
+                                     def.trim() + signature.trim(), null);
                               break;
                              }
                             }
@@ -283,12 +315,13 @@ public class Ctags {
      * Add a tag to a {@code Definitions} instance.
      */
     private void addTag(Definitions defs, Interner<String> seenSymbols,
-            String lnum, String symbol, String type, String text) {
+            String lnum, String symbol, String type, String text, String scope) {
         // The strings are frequently repeated (a symbol can be used in
         // multiple definitions, multiple definitions can have the same type,
         // one line can contain multiple definitions). Intern them to minimize
         // the space consumed by them (see bug #809).
         defs.addTag(Integer.parseInt(lnum), seenSymbols.intern(symbol.trim()),
-            seenSymbols.intern(type.trim()), seenSymbols.intern(text.trim()));
+            seenSymbols.intern(type.trim()), seenSymbols.intern(text.trim()),
+            scope == null ? null : seenSymbols.intern(scope.trim()));
     }
 }

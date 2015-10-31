@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 package org.opensolaris.opengrok.index;
 
@@ -45,8 +45,17 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.DateTools;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-import org.apache.lucene.index.*;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.Fields;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexWriterConfig.OpenMode;
+import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.MultiFields;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.index.Terms;
+import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
@@ -66,7 +75,6 @@ import org.opensolaris.opengrok.configuration.RuntimeEnvironment;
 import org.opensolaris.opengrok.history.HistoryException;
 import org.opensolaris.opengrok.history.HistoryGuru;
 import org.opensolaris.opengrok.search.QueryBuilder;
-import org.opensolaris.opengrok.search.SearchEngine;
 import org.opensolaris.opengrok.util.IOUtils;
 import org.opensolaris.opengrok.web.Util;
 
@@ -75,7 +83,7 @@ import org.opensolaris.opengrok.web.Util;
  * one index database per project.
  *
  * @author Trond Norbye
- * @author Lubos Kosco , update for lucene 4.2.0
+ * @author Lubos Kosco , update for lucene 4.x , 5.x
  */
 public class IndexDatabase {
 
@@ -95,12 +103,18 @@ public class IndexDatabase {
     private boolean running;
     private List<String> directories;
     static final Logger log = Logger.getLogger(IndexDatabase.class.getName());
+    private static final Comparator fileComparator = new Comparator<File>() {
+        @Override
+        public int compare(File p1, File p2) {
+            return p1.getName().compareTo(p2.getName());
+        }
+    };
     private Ctags ctags;
     private LockFactory lockfact;
     private final BytesRef emptyBR = new BytesRef("");
     
     //Directory where we store indexes
-    private static final String INDEX_DIR="index";
+    public static final String INDEX_DIR="index";
 
     /**
      * Create a new instance of the Index Database. Use this constructor if you
@@ -121,7 +135,7 @@ public class IndexDatabase {
      */
     public IndexDatabase(Project project) throws IOException {
         this.project = project;
-        lockfact = new SimpleFSLockFactory();
+        lockfact = SimpleFSLockFactory.INSTANCE;
         initialize();
     }
 
@@ -179,7 +193,7 @@ public class IndexDatabase {
      *
      * @param executor An executor to run the job
      * @param listener where to signal the changes to the database
-     * @param paths
+     * @param paths list of paths to be indexed
      * @throws IOException if an error occurs
      */
     public static void update(ExecutorService executor, IndexChangedListener listener, List<String> paths) throws IOException {
@@ -251,9 +265,9 @@ public class IndexDatabase {
             }            
 
             if (!env.isUsingLuceneLocking()) {
-                lockfact = NoLockFactory.getNoLockFactory();
+                lockfact = NoLockFactory.INSTANCE;
             }
-            indexDirectory = FSDirectory.open(indexDir, lockfact);            
+            indexDirectory = FSDirectory.open(indexDir.toPath(), lockfact);            
             ignoredNames = env.getIgnoredNames();
             includedNames = env.getIncludedNames();
             analyzerGuru = new AnalyzerGuru();
@@ -322,9 +336,9 @@ public class IndexDatabase {
             }
         }
 
-        try {            
+        try {
             Analyzer analyzer = AnalyzerGuru.getAnalyzer();
-            IndexWriterConfig iwc = new IndexWriterConfig(SearchEngine.LUCENE_VERSION, analyzer);
+            IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
             iwc.setOpenMode(OpenMode.CREATE_OR_APPEND);
             iwc.setRAMBufferSizeMB(RuntimeEnvironment.getInstance().getRamBufferSize());
             writer = new IndexWriter(indexDirectory, iwc);
@@ -359,7 +373,7 @@ public class IndexDatabase {
                 
                 try {
                     if (numDocs > 0) {
-                        uidIter = terms.iterator(uidIter);                        
+                        uidIter = terms.iterator();
                         TermsEnum.SeekStatus stat = uidIter.seekCeil(new BytesRef(startuid)); //init uid                        
                         if (stat==TermsEnum.SeekStatus.END) {
                             uidIter=null;
@@ -490,8 +504,8 @@ public class IndexDatabase {
         IndexWriter wrt = null;
         try {
             log.info("Optimizing the index ... ");
-            Analyzer analyzer = new StandardAnalyzer(SearchEngine.LUCENE_VERSION);
-            IndexWriterConfig conf = new IndexWriterConfig(SearchEngine.LUCENE_VERSION, analyzer);
+            Analyzer analyzer = new StandardAnalyzer();
+            IndexWriterConfig conf = new IndexWriterConfig(analyzer);
             conf.setOpenMode(OpenMode.CREATE_OR_APPEND);
 
             wrt = new IndexWriter(indexDirectory, conf);
@@ -600,6 +614,7 @@ public class IndexDatabase {
         }
         fa.setCtags(ctags);
         fa.setProject(Project.getProject(path));
+        fa.setScopesEnabled(RuntimeEnvironment.getInstance().isScopesEnabled());
 
         Document doc = new Document();
         try (Writer xrefOut = getXrefWriter(fa, path)) {
@@ -616,7 +631,7 @@ public class IndexDatabase {
         }
 
         try {
-            writer.addDocument(doc, fa);
+            writer.addDocument(doc);
         } catch (Throwable t) {
             cleanupResources(doc);
             throw t;
@@ -820,12 +835,7 @@ public class IndexDatabase {
                 dir.getAbsolutePath());
             return lcur_count;
         }
-        Arrays.sort(files, new Comparator<File>() {
-            @Override
-            public int compare(File p1, File p2) {
-                return p1.getName().compareTo(p2.getName());
-            }
-        });
+        Arrays.sort(files, fileComparator);
 
         for (File file : files) {
             if (accept(dir, file)) {
@@ -964,7 +974,7 @@ public class IndexDatabase {
      */
     public void listFiles() throws IOException {
         IndexReader ireader = null;
-        TermsEnum iter=null;
+        TermsEnum iter;
         Terms terms = null;
 
         try {
@@ -974,7 +984,7 @@ public class IndexDatabase {
                 Fields uFields = MultiFields.getFields(ireader);//reader.getTermVectors(0);
                 terms = uFields.terms(QueryBuilder.U);
             }
-            iter = terms.iterator(iter); // init uid iterator
+            iter = terms.iterator(); // init uid iterator
             while (iter != null && iter.term() != null) {
                 log.fine(Util.uid2url(iter.term().utf8ToString()));
                 BytesRef next=iter.next();
@@ -1025,7 +1035,7 @@ public class IndexDatabase {
 
     public void listTokens(int freq) throws IOException {
         IndexReader ireader = null;
-        TermsEnum iter = null;
+        TermsEnum iter;
         Terms terms = null;         
 
         try {
@@ -1035,7 +1045,7 @@ public class IndexDatabase {
                 Fields uFields = MultiFields.getFields(ireader);//reader.getTermVectors(0);
                 terms = uFields.terms(QueryBuilder.DEFS);
             }
-            iter = terms.iterator(iter); // init uid iterator            
+            iter = terms.iterator(); // init uid iterator            
             while (iter != null && iter.term() != null) {
                 //if (iter.term().field().startsWith("f")) {
                 if (iter.docFreq() > 16 && iter.term().utf8ToString().length() > freq) {
@@ -1080,7 +1090,7 @@ public class IndexDatabase {
             indexDir = new File(indexDir, p.getPath());
         }
         try {
-            FSDirectory fdir = FSDirectory.open(indexDir, NoLockFactory.getNoLockFactory());
+            FSDirectory fdir = FSDirectory.open(indexDir.toPath(), NoLockFactory.INSTANCE);
             if (indexDir.exists() && DirectoryReader.indexExists(fdir)) {
                 ret = DirectoryReader.open(fdir);
             }

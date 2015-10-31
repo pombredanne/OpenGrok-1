@@ -29,6 +29,7 @@ jdepend/report.xml
 lib/derby.jar
 lib/jrcs.jar
 lib/lucene-*
+lib/servlet-api-*
 derby.log
 opengrok*.log
 nbproject/genfiles.properties
@@ -37,3 +38,12 @@ webrev
 opengrok-web-nbproject/nbproject/private/
 opengrok-web-nbproject/nbproject/genfiles.properties
 run_my.bat
+*.xml~
+opengrok-web-nbproject/nbproject/build-impl.xml~
+build.bat
+jacoco
+jacoco.exec
+cov-int.zip
+cov-int/*
+egrok/bin
+pmd.bat

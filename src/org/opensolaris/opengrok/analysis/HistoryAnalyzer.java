@@ -18,20 +18,18 @@
  */
 
 /*
- * Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 package org.opensolaris.opengrok.analysis;
 
-import java.io.Reader;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.core.StopFilter;
 import org.apache.lucene.analysis.util.CharArraySet;
 import org.opensolaris.opengrok.analysis.plain.PlainFullTokenizer;
-import org.opensolaris.opengrok.search.SearchEngine;
 
 public final class HistoryAnalyzer extends Analyzer {
 
-    private CharArraySet stopWords;
+    private final CharArraySet stopWords;
     /**
      * An array containing some common English words that are not usually useful
      * for searching.
@@ -49,24 +47,19 @@ public final class HistoryAnalyzer extends Analyzer {
      * Builds an analyzer which removes words in ENGLISH_STOP_WORDS.
      */
     public HistoryAnalyzer() {
-    }
-
-    /**
-     * Builds an analyzer which removes words in the provided array.
-     */
-    public HistoryAnalyzer(String[] stopWords) {
         super(Analyzer.PER_FIELD_REUSE_STRATEGY);
-        this.stopWords = StopFilter.makeStopSet(SearchEngine.LUCENE_VERSION, stopWords);
+        stopWords = StopFilter.makeStopSet(ENGLISH_STOP_WORDS);
     }
-
+   
     /**
      * Filters LowerCaseTokenizer with StopFilter.
+     * @param fieldName name of field for which to create components     
+     * @return components for this analyzer
      */
     @Override
-    protected TokenStreamComponents createComponents(String fieldName, Reader reader) {
-        stopWords = StopFilter.makeStopSet(SearchEngine.LUCENE_VERSION, ENGLISH_STOP_WORDS);
-        final PlainFullTokenizer plainfull = new PlainFullTokenizer(reader);
+    protected TokenStreamComponents createComponents(String fieldName) {        
+        final PlainFullTokenizer plainfull = new PlainFullTokenizer();
         //we are counting position increments, this might affect the queries later and need to be in sync, especially for highlighting of results
-        return new TokenStreamComponents(plainfull, new StopFilter(SearchEngine.LUCENE_VERSION, plainfull, stopWords));
+        return new TokenStreamComponents(plainfull, new StopFilter(plainfull, stopWords));
     }
 }

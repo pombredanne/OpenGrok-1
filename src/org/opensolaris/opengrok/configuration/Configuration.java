@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2007, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 package org.opensolaris.opengrok.configuration;
 
@@ -86,7 +86,7 @@ public final class Configuration {
      */
     private Project defaultProject;
     /**
-     * Default size of memory to be used for flushing of lucene docs
+     * Default size of memory to be used for flushing of Lucene docs
      * per thread.
      * Lucene 4.x uses 16MB and 8 threads, so below is a nice tunable.
      */
@@ -125,8 +125,22 @@ public final class Configuration {
     private final Map<String, String> cmds;
     private int tabSize;
     private int command_timeout;
+    private boolean scopesEnabled;
     private static final Logger logger = Logger.getLogger(Configuration.class.getName());
-    
+    /*
+     * Set to false if we want to disable fetching history of individual files
+     * (by running appropriate SCM command) when the history is not found
+     * in history cache for repositories capable of fetching history for
+     * directories. This option affects file based history cache only.
+     */
+    private boolean fetchHistoryWhenNotInCache;
+    /*
+     * Set to false to disable extended handling of history of files across
+     * renames, i.e. support getting diffs of revisions across renames
+     * for capable repositories.
+     */
+    private boolean handleHistoryOfRenamedFiles;
+
     public static final double defaultRamBufferSize=16;
     public static final int defaultScanningDepth=3;
 
@@ -153,10 +167,6 @@ public final class Configuration {
      * Get the default tab size (number of space characters per tab character)
      * to use for each project. If {@code <= 0} tabs are read/write as is.
      *
-     *
-     *
-
-     *
      * @return current tab size set.
      * @see Project#getTabSize()
      * @see org.opensolaris.opengrok.analysis.ExpandTabsReader
@@ -168,10 +178,6 @@ public final class Configuration {
     /**
      * Set the default tab size (number of space characters per tab character)
      * to use for each project. If {@code <= 0} tabs are read/write as is.
-     *
-     *
-     *
-
      *
      * @param tabSize tabsize to set.
      * @see Project#setTabSize(int)
@@ -239,6 +245,9 @@ public final class Configuration {
         setSourceRoot(null);
         setDataRoot(null);
         setCommandTimeout(600); // 10 minutes
+        setScopesEnabled(true);
+        setFetchHistoryWhenNotInCache(true);
+        setHandleHistoryOfRenamedFiles(true);
     }
 
     public String getRepoCmd(String clazzName) {
@@ -328,6 +337,22 @@ public final class Configuration {
      */
     public void setHistoryCacheTime(int historyCacheTime) {
         this.historyCacheTime = historyCacheTime;
+    }
+
+    public boolean isFetchHistoryWhenNotInCache() {
+        return fetchHistoryWhenNotInCache;
+    }
+
+    public void setFetchHistoryWhenNotInCache(boolean nofetch) {
+        this.fetchHistoryWhenNotInCache = nofetch;
+    }
+
+    public boolean isHandleHistoryOfRenamedFiles() {
+        return handleHistoryOfRenamedFiles;
+    }
+
+    public void setHandleHistoryOfRenamedFiles(boolean enable) {
+        this.handleHistoryOfRenamedFiles = enable;
     }
 
     /**
@@ -748,6 +773,14 @@ public final class Configuration {
         this.chattyStatusPage = chattyStatusPage;
     }
 
+    public boolean isScopesEnabled() {
+        return scopesEnabled;
+    }
+    
+    public void setScopesEnabled(boolean scopesEnabled) {
+        this.scopesEnabled = scopesEnabled;
+    }
+    
     /**
      * Write the current configuration to a file
      *

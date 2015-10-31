@@ -18,13 +18,14 @@
  */
 
 /*
- * Copyright (c) 2005, 2012, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 package org.opensolaris.opengrok.history;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -42,7 +43,7 @@ import org.opensolaris.opengrok.OpenGrokLogger;
 import org.opensolaris.opengrok.configuration.Configuration.RemoteSCM;
 import org.opensolaris.opengrok.configuration.RuntimeEnvironment;
 import org.opensolaris.opengrok.index.IgnoredNames;
-import org.opensolaris.opengrok.util.StringUtils;
+import org.opensolaris.opengrok.util.Statistics;
 
 /**
  * The HistoryGuru is used to implement an transparent layer to the various
@@ -51,26 +52,31 @@ import org.opensolaris.opengrok.util.StringUtils;
  * @author Chandan
  */
 public final class HistoryGuru {
+
     private static final Logger log = OpenGrokLogger.getLogger();
 
-    /** The one and only instance of the HistoryGuru */
-    private static HistoryGuru instance = new HistoryGuru();
+    /**
+     * The one and only instance of the HistoryGuru
+     */
+    private static final HistoryGuru instance = new HistoryGuru();
 
-    /** The history cache to use */
+    /**
+     * The history cache to use
+     */
     private final HistoryCache historyCache;
 
-    private Map<String, Repository> repositories =
-        new HashMap<String, Repository>();
+    private Map<String, Repository> repositories
+            = new HashMap<>();
     private final int scanningDepth;
 
     /**
-     * Creates a new instance of HistoryGuru, and try to set the default
-     * source control system.
+     * Creates a new instance of HistoryGuru, and try to set the default source
+     * control system.
      */
     private HistoryGuru() {
         HistoryCache cache = null;
         RuntimeEnvironment env = RuntimeEnvironment.getInstance();
-        scanningDepth=env.getScanningDepth();
+        scanningDepth = env.getScanningDepth();
         if (env.useHistoryCache()) {
             if (env.storeHistoryCacheInDB()) {
                 cache = new JDBCHistoryCache();
@@ -91,14 +97,16 @@ public final class HistoryGuru {
 
     /**
      * Get the one and only instance of the HistoryGuru
+     *
      * @return the one and only HistoryGuru instance
      */
-    public static HistoryGuru getInstance()  {
+    public static HistoryGuru getInstance() {
         return instance;
     }
 
     /**
      * Return whether or not a cache should be used for the history log.
+     *
      * @return {@code true} if the history cache has been enabled and
      * initialized, {@code false} otherwise
      */
@@ -136,25 +144,28 @@ public final class HistoryGuru {
                 hist = repo.getHistory(file);
             } catch (HistoryException ex) {
                 Logger.getLogger(HistoryGuru.class.getName()).log(Level.FINEST,
-                    "Cannot get messages for tooltip: ", ex);
+                        "Cannot get messages for tooltip: ", ex);
             }
             if (hist != null && ret != null) {
-             Set<String> revs = ret.getRevisions();
+                Set<String> revs = ret.getRevisions();
+                int revsMatched = 0;
              // !!! cannot do this because of not matching rev ids (keys)
-             // first is the most recent one, so we need the position of "rev"
-             // until the end of the list
-             //if (hent.indexOf(rev)>0) {
-             //     hent = hent.subList(hent.indexOf(rev), hent.size());
-             //}
-             for (HistoryEntry he : hist.getHistoryEntries()) {
-                String hist_rev = he.getRevision();
-                String short_rev = repo.getRevisionForAnnotate(hist_rev);
-                if (revs.contains(short_rev)) {
-                    ret.addDesc(short_rev, "changeset: " + he.getRevision() +
-                        "\nsummary: " + he.getMessage() + "\nuser: " +
-                        he.getAuthor() + "\ndate: " + he.getDate());
+                // first is the most recent one, so we need the position of "rev"
+                // until the end of the list
+                //if (hent.indexOf(rev)>0) {
+                //     hent = hent.subList(hent.indexOf(rev), hent.size());
+                //}
+                for (HistoryEntry he : hist.getHistoryEntries()) {
+                    String hist_rev = he.getRevision();
+                    String short_rev = repo.getRevisionForAnnotate(hist_rev);
+                    if (revs.contains(short_rev)) {
+                        ret.addDesc(short_rev, "changeset: " + he.getRevision()
+                                + "\nsummary: " + he.getMessage() + "\nuser: "
+                                + he.getAuthor() + "\ndate: " + he.getDate());
+                        ret.addFileVersion(short_rev, revs.size() - revsMatched); //history entries are coming from recent to older, file version should be from oldest to newer
+                        revsMatched++;
+                    }
                 }
-             }
             }
         }
 
@@ -162,13 +173,12 @@ public final class HistoryGuru {
     }
 
     /**
-     * Get the appropriate history reader for the file specified by parent and
-     * basename.
+     * Get the appropriate history reader for given file.
      *
      * @param file The file to get the history reader for
      * @throws HistoryException If an error occurs while getting the history
      * @return A HistorReader that may be used to read out history data for a
-     *  named file
+     * named file
      */
     public HistoryReader getHistoryReader(File file) throws HistoryException {
         History history = getHistory(file, false);
@@ -205,9 +215,9 @@ public final class HistoryGuru {
      * Get the history for the specified file.
      *
      * @param file the file to get the history for
-     * @param withFiles whether or not the returned history should contain
-     * a list of files touched by each changeset (the file list may be skipped
-     * if false, but it doesn't have to)
+     * @param withFiles whether or not the returned history should contain a
+     * list of files touched by each changeset (the file list may be skipped if
+     * false, but it doesn't have to)
      * @param ui called from the webapp
      * @return history for the file
      * @throws HistoryException on error when accessing the history
@@ -220,11 +230,11 @@ public final class HistoryGuru {
         History history = null;
         RemoteSCM rscm = RuntimeEnvironment.getInstance().getRemoteScmSupported();
         boolean doRemote = (ui && (rscm == RemoteSCM.UIONLY))
-            || (rscm == RemoteSCM.ON)
-            || ((rscm == RemoteSCM.DIRBASED) && (repo != null) && repo.hasHistoryForDirectories());
+                || (rscm == RemoteSCM.ON)
+                || (ui || ((rscm == RemoteSCM.DIRBASED) && (repo != null) && repo.hasHistoryForDirectories()));
 
         if (repo != null && repo.isWorking() && repo.fileHasHistory(file)
-            && (!repo.isRemote() || doRemote)) {
+                && (!repo.isRemote() || doRemote)) {
 
             if (useCache() && historyCache.supportsRepository(repo)) {
                 history = historyCache.get(file, repo, withFiles);
@@ -238,6 +248,7 @@ public final class HistoryGuru {
 
     /**
      * Get a named revision of the specified file.
+     *
      * @param parent The directory containing the file
      * @param basename The name of the file
      * @param rev The revision to get
@@ -255,6 +266,7 @@ public final class HistoryGuru {
 
     /**
      * Does this directory contain files with source control information?
+     *
      * @param file The name of the directory
      * @return true if the files in this directory have associated revision
      * history
@@ -269,9 +281,9 @@ public final class HistoryGuru {
         // This should return true for Annotate view.
         return repo.isWorking() && repo.fileHasHistory(file)
                 && ((RuntimeEnvironment.getInstance().getRemoteScmSupported() == RemoteSCM.ON)
-                    || (RuntimeEnvironment.getInstance().getRemoteScmSupported() == RemoteSCM.UIONLY)
-                    || (RuntimeEnvironment.getInstance().getRemoteScmSupported() == RemoteSCM.DIRBASED)
-                    || !repo.isRemote());
+                || (RuntimeEnvironment.getInstance().getRemoteScmSupported() == RemoteSCM.UIONLY)
+                || (RuntimeEnvironment.getInstance().getRemoteScmSupported() == RemoteSCM.DIRBASED)
+                || !repo.isRemote());
     }
 
     /**
@@ -298,7 +310,8 @@ public final class HistoryGuru {
      *
      * @param directory the directory whose files to check
      * @return a map from file names to modification times for the files that
-     *   the history cache has information about
+     * the history cache has information about
+     * @throws org.opensolaris.opengrok.history.HistoryException
      */
     public Map<String, Date> getLastModifiedTimes(File directory)
             throws HistoryException {
@@ -310,28 +323,28 @@ public final class HistoryGuru {
     }
 
     private void addRepositories(File[] files, Collection<RepositoryInfo> repos,
-            IgnoredNames ignoredNames, int depth)
-    {
+            IgnoredNames ignoredNames, int depth) {
         addRepositories(files, repos, ignoredNames, true, depth);
     }
 
     /**
-     * recursivelly search for repositories with a depth limit
+     * recursively search for repositories with a depth limit
+     *
      * @param files list of files to check if they contain a repo
      * @param repos list of found repos
      * @param ignoredNames what files to ignore
      * @param recursiveSearch whether to use recursive search
      * @param depth current depth - using global scanningDepth - one can limit
-     *  this to improve scanning performance
+     * this to improve scanning performance
      */
     private void addRepositories(File[] files, Collection<RepositoryInfo> repos,
             IgnoredNames ignoredNames, boolean recursiveSearch, int depth) {
         for (File file : files) {
             Repository repository = null;
             if (file.getName().equals(".opengrok_skip_history")) {
-                log.log(Level.INFO, "Skipping history cache creation for "
-                        + file.getParentFile().getAbsolutePath()
-                        + " and it's subdirectories");
+                log.log(Level.INFO,
+                        "Skipping history cache creation for {0} and its subdirectories",
+                        file.getParentFile().getAbsolutePath());
                 return;
             }
         }
@@ -341,22 +354,21 @@ public final class HistoryGuru {
                 repository = RepositoryFactory.getRepository(file);
             } catch (InstantiationException ie) {
                 log.log(Level.WARNING, "Could not create repoitory for '"
-                    + file + "', could not instantiate the repository.", ie);
+                        + file + "', could not instantiate the repository.", ie);
             } catch (IllegalAccessException iae) {
                 log.log(Level.WARNING, "Could not create repoitory for '"
-                    + file + "', missing access rights.", iae);
+                        + file + "', missing access rights.", iae);
             }
             if (repository == null) {
-                // Not a repository, search it's sub-dirs
+                // Not a repository, search its sub-dirs
                 if (file.isDirectory() && !ignoredNames.ignore(file)) {
                     File subFiles[] = file.listFiles();
                     if (subFiles == null) {
                         log.log(Level.WARNING,
-                            "Failed to get sub directories for '"
-                            + file.getAbsolutePath()
-                            + "', check access permissions.");
-                    } else if (depth<=scanningDepth) {
-                        addRepositories(subFiles, repos, ignoredNames, depth+1);
+                                "Failed to get sub directories for ''{0}'', check access permissions.",
+                                file.getAbsolutePath());
+                    } else if (depth <= scanningDepth) {
+                        addRepositories(subFiles, repos, ignoredNames, depth + 1);
                     }
                 }
             } else {
@@ -365,7 +377,7 @@ public final class HistoryGuru {
                     repository.setDirectoryName(path);
                     if (RuntimeEnvironment.getInstance().isVerbose()) {
                         log.log(Level.CONFIG, "Adding <{0}> repository: <{1}>",
-                            new Object[]{repository.getClass().getName(), path});
+                                new Object[]{repository.getClass().getName(), path});
                     }
 
                     repos.add(new RepositoryInfo(repository));
@@ -375,20 +387,20 @@ public final class HistoryGuru {
                         File subFiles[] = file.listFiles();
                         if (subFiles == null) {
                             log.log(Level.WARNING,
-                                "Failed to get sub directories for '"
-                                + file.getAbsolutePath()
-                                + "', check access permissions.");
-                        } else if (depth<=scanningDepth) {
+                                    "Failed to get sub directories for ''{0}'', check access permissions.",
+                                    file.getAbsolutePath());
+                        } else if (depth <= scanningDepth) {
                             // Search only one level down - if not: too much
                             // stat'ing for huge Mercurial repositories
                             addRepositories(subFiles, repos, ignoredNames,
-                                false, depth+1);
+                                    false, depth + 1);
                         }
                     }
 
                 } catch (IOException exp) {
-                    log.log(Level.WARNING, "Failed to get canonical path for "
-                        + file.getAbsolutePath() + ": " + exp.getMessage());
+                    log.log(Level.WARNING,
+                            "Failed to get canonical path for {0}: {1}",
+                            new Object[]{file.getAbsolutePath(), exp.getMessage()});
                     log.log(Level.WARNING, "Repository will be ignored...", exp);
                 }
             }
@@ -402,9 +414,9 @@ public final class HistoryGuru {
      * @param dir the root directory to start the search in.
      */
     public void addRepositories(String dir) {
-        List<RepositoryInfo> repos = new ArrayList<RepositoryInfo>();
-        addRepositories(new File[] {new File(dir)}, repos,
-                RuntimeEnvironment.getInstance().getIgnoredNames(),0);
+        List<RepositoryInfo> repos = new ArrayList<>();
+        addRepositories(new File[]{new File(dir)}, repos,
+                RuntimeEnvironment.getInstance().getIgnoredNames(), 0);
         RuntimeEnvironment.getInstance().setRepositories(repos);
         invalidateRepositories(repos);
     }
@@ -424,27 +436,28 @@ public final class HistoryGuru {
             if (repository.isWorking()) {
                 if (verbose) {
                     log.info(String.format("Update %s repository in %s",
-                        type, path));
+                            type, path));
                 }
 
                 try {
                     repository.update();
                 } catch (UnsupportedOperationException e) {
                     log.warning(String.format("Skipping update of %s repository"
-                        + " in %s: Not implemented", type, path));
+                            + " in %s: Not implemented", type, path));
                 } catch (Exception e) {
                     log.log(Level.WARNING, "An error occured while updating "
-                        + path + " (" + type + ")", e);
+                            + path + " (" + type + ")", e);
                 }
             } else {
                 log.warning(String.format("Skipping update of %s repository in "
-                    + "%s: Missing SCM dependencies?", type, path));
+                        + "%s: Missing SCM dependencies?", type, path));
             }
         }
     }
 
     /**
      * Update the source the contents in the source repositories.
+     *
      * @param paths A list of files/directories to update
      */
     public void updateRepositories(Collection<String> paths) {
@@ -458,23 +471,23 @@ public final class HistoryGuru {
             if (repository.isWorking()) {
                 if (verbose) {
                     log.info(String.format("Update %s repository in %s", type,
-                        repository.getDirectoryName()));
+                            repository.getDirectoryName()));
                 }
 
                 try {
                     repository.update();
                 } catch (UnsupportedOperationException e) {
                     log.warning(String.format("Skipping update of %s repository"
-                        + " in %s: Not implemented", type,
-                        repository.getDirectoryName()));
+                            + " in %s: Not implemented", type,
+                            repository.getDirectoryName()));
                 } catch (Exception e) {
                     log.log(Level.WARNING, "An error occured while updating "
-                        + repository.getDirectoryName() + " (" + type + ")", e);
+                            + repository.getDirectoryName() + " (" + type + ")", e);
                 }
             } else {
                 log.warning(String.format("Skipping update of %s repository in"
-                    + " %s: Missing SCM dependencies?", type,
-                    repository.getDirectoryName()));
+                        + " %s: Missing SCM dependencies?", type,
+                        repository.getDirectoryName()));
             }
         }
     }
@@ -485,55 +498,73 @@ public final class HistoryGuru {
 
         if (repository.isWorking()) {
             boolean verbose = RuntimeEnvironment.getInstance().isVerbose();
-            long start = System.currentTimeMillis();
+            Statistics elapsed = new Statistics();
 
             if (verbose) {
                 log.log(Level.INFO, "Creating historycache for {0} ({1})",
-                    new Object[]{path, type});
+                        new Object[]{path, type});
             }
 
             try {
                 repository.createCache(historyCache, sinceRevision);
             } catch (Exception e) {
                 log.log(Level.WARNING,
-                    "An error occured while creating cache for " + path + " ("
-                    + type + ")", e);
+                        "An error occured while creating cache for " + path + " ("
+                        + type + ")", e);
             }
 
             if (verbose) {
-                long stop = System.currentTimeMillis();
-                String time_str = StringUtils.getReadableTime(stop - start);
-                log.log(Level.INFO, "Done historycache for {0} (took {1})",
-                    new Object[]{path, time_str});
+                elapsed.report(log, "Done historycache for " + path);
             }
         } else {
-            log.log(Level.WARNING, "Skipping creation of historycache of "
-                + type + " repository in " + path + ": Missing SCM dependencies?");
+            log.log(Level.WARNING,
+                    "Skipping creation of historycache of {0} repository in {1}: Missing SCM dependencies?",
+                    new Object[]{type, path});
         }
     }
 
     private void createCacheReal(Collection<Repository> repositories) {
+        Statistics elapsed = new Statistics();
         ExecutorService executor = RuntimeEnvironment.getHistoryExecutor();
+        // Since we know each repository object from the repositories
+        // collection is unique, we can abuse HashMap to create a list of
+        // repository,revision tuples with repository as key (as the revision
+        // string does not have to be unique - surely it is not unique
+        // for the initial index case).
+        HashMap<Repository, String> repos2process = new HashMap<>();
 
-        final CountDownLatch latch = new CountDownLatch(repositories.size());
+        // Collect the list of <latestRev,repo> pairs first so that we
+        // do not have to deal with latch decrementing in the cycle below.
         for (final Repository repo : repositories) {
             final String latestRev;
 
             try {
                 latestRev = historyCache.getLatestCachedRevision(repo);
+                repos2process.put(repo, latestRev);
             } catch (HistoryException he) {
                 log.log(Level.WARNING,
                         String.format(
-                        "Failed to retrieve latest cached revision for %s",
-                        repo.getDirectoryName()), he);
-                latch.countDown();
-                continue;
+                                "Failed to retrieve latest cached revision for %s",
+                                repo.getDirectoryName()), he);
             }
+        }
+
+        log.log(Level.INFO, "Creating historycache for {0} repositories",
+                repos2process.size());
+        final CountDownLatch latch = new CountDownLatch(repos2process.size());
+        for (final Map.Entry<Repository, String> entry : repos2process.entrySet()) {
             executor.submit(new Runnable() {
                 @Override
                 public void run() {
-                    createCache(repo, latestRev);
-                    latch.countDown();
+                    try {
+                        createCache(entry.getKey(), entry.getValue());
+                    } catch (Exception ex) {
+                        // We want to catch any exception since we are in thread.
+                        log.log(Level.WARNING,
+                                "createCacheReal() got exception{0}", ex);
+                    } finally {
+                        latch.countDown();
+                    }
                 }
             });
         }
@@ -547,17 +578,17 @@ public final class HistoryGuru {
             latch.await();
         } catch (InterruptedException ex) {
             OpenGrokLogger.getLogger().log(Level.SEVERE,
-                "latch exception" + ex);
+                    "latch exception{0}", ex);
         }
 
         executor.shutdown();
         while (!executor.isTerminated()) {
             try {
                 // Wait forever
-                executor.awaitTermination(999,TimeUnit.DAYS);
+                executor.awaitTermination(999, TimeUnit.DAYS);
             } catch (InterruptedException exp) {
                 OpenGrokLogger.getLogger().log(Level.WARNING,
-                    "Received interrupt while waiting for executor to finish", exp);
+                        "Received interrupt while waiting for executor to finish", exp);
             }
         }
         RuntimeEnvironment.freeHistoryExecutor();
@@ -566,7 +597,7 @@ public final class HistoryGuru {
             RuntimeEnvironment.destroyRenamedHistoryExecutor();
         } catch (InterruptedException ex) {
             OpenGrokLogger.getLogger().log(Level.SEVERE,
-                "destroying of renamed thread pool failed", ex);
+                    "destroying of renamed thread pool failed", ex);
         }
 
         // The cache has been populated. Now, optimize how it is stored on
@@ -577,6 +608,8 @@ public final class HistoryGuru {
             OpenGrokLogger.getLogger().log(Level.WARNING,
                     "Failed optimizing the history cache database", he);
         }
+        elapsed.report(log, "Done historycache for all repositories");
+        historyCache.setHistoryIndexDone();
     }
 
     public void createCache(Collection<String> repositories) {
@@ -600,10 +633,12 @@ public final class HistoryGuru {
         for (Repository r : repos) {
             try {
                 cache.clear(r);
-                log.info("History cache for " + r.getDirectoryName() + " cleared.");
+                log.log(Level.INFO,
+                        "History cache for {0} cleared.", r.getDirectoryName());
             } catch (HistoryException e) {
-                log.warning("Clearing history cache for repository " +
-                    r.getDirectoryName() + " failed: " + e.getLocalizedMessage());
+                log.log(Level.WARNING,
+                        "Clearing history cache for repository {0} failed: {1}",
+                        new Object[]{r.getDirectoryName(), e.getLocalizedMessage()});
             }
         }
         invalidateRepositories(repos);
@@ -621,15 +656,15 @@ public final class HistoryGuru {
     }
 
     private List<Repository> getReposFromString(Collection<String> repositories) {
-        ArrayList<Repository> repos = new ArrayList<Repository>();
+        ArrayList<Repository> repos = new ArrayList<>();
         File root = RuntimeEnvironment.getInstance().getSourceRootFile();
         for (String file : repositories) {
             File f = new File(root, file);
             Repository r = getRepository(f);
             if (r == null) {
                 log.log(Level.WARNING, "Could not locate a repository for {0}",
-                    f.getAbsolutePath());
-            } else if (!repos.contains(r)){
+                        f.getAbsolutePath());
+            } else if (!repos.contains(r)) {
                 repos.add(r);
             }
         }
@@ -638,13 +673,13 @@ public final class HistoryGuru {
 
     /**
      * Ensure that we have a directory in the cache. If it's not there, fetch
-     * its history and populate the cache. If it's already there, and the
-     * cache is able to tell how recent it is, attempt to update it to the
-     * most recent revision.
+     * its history and populate the cache. If it's already there, and the cache
+     * is able to tell how recent it is, attempt to update it to the most recent
+     * revision.
      *
      * @param file the root path to test
-     * @throws HistoryException if an error occurs while accessing the
-     * history cache
+     * @throws HistoryException if an error occurs while accessing the history
+     * cache
      */
     public void ensureHistoryCacheExists(File file) throws HistoryException {
         if (!useCache()) {
@@ -696,38 +731,70 @@ public final class HistoryGuru {
     }
 
     /**
-     * Invalidate the current list of known repositories!
+     * Invalidate list of known repositories which match the list of
+     * directories.
+     *
+     * @param repos the new repositories
+     * @param dirs only process repositories which match the directories
+     */
+    public void invalidateRepositories(Collection<? extends RepositoryInfo> repos, List<String> dirs) {
+        if (repos != null && !repos.isEmpty() && dirs != null && !dirs.isEmpty()) {
+            List<RepositoryInfo> newrepos = new ArrayList<>();
+            for (RepositoryInfo i : repos) {
+                for (String dir : dirs) {
+                    Path dirPath = new File(dir).toPath();
+                    Path iPath = new File(i.getDirectoryName()).toPath();
+                    if (iPath.startsWith(dirPath)) {
+                        newrepos.add(i);
+                    }
+                }
+            }
+            repos = newrepos;
+        }
+
+        invalidateRepositories(repos);
+    }
+
+    /**
+     * Invalidate list of known repositories.
      *
      * @param repos The new repositories
      */
-    public void invalidateRepositories(Collection<? extends RepositoryInfo> repos)
-    {
+    public void invalidateRepositories(Collection<? extends RepositoryInfo> repos) {
         if (repos == null || repos.isEmpty()) {
             repositories.clear();
         } else {
-            Map<String, Repository> nrep =
-                new HashMap<String, Repository>(repos.size());
+            Map<String, Repository> newrepos
+                    = new HashMap<>(repos.size());
+            Statistics elapsed = new Statistics();
+            boolean verbose = RuntimeEnvironment.getInstance().isVerbose();
+            if (verbose) {
+                log.log(Level.FINE, "invalidating repositories");
+            }
             for (RepositoryInfo i : repos) {
                 try {
                     Repository r = RepositoryFactory.getRepository(i);
                     if (r == null) {
                         log.log(Level.WARNING,
-                            "Failed to instanciate internal repository data for "
-                            + i.getType() + " in " + i.getDirectoryName());
+                                "Failed to instanciate internal repository data for {0} in {1}",
+                                new Object[]{i.getType(), i.getDirectoryName()});
                     } else {
-                        nrep.put(r.getDirectoryName(), r);
+                        newrepos.put(r.getDirectoryName(), r);
                     }
                 } catch (InstantiationException ex) {
                     log.log(Level.WARNING, "Could not create " + i.getType()
-                        + " for '" + i.getDirectoryName()
-                        + "', could not instantiate the repository.", ex);
+                            + " for '" + i.getDirectoryName()
+                            + "', could not instantiate the repository.", ex);
                 } catch (IllegalAccessException iae) {
                     log.log(Level.WARNING, "Could not create " + i.getType()
-                        + " for '" + i.getDirectoryName()
-                        + "', missing access rights.", iae);
+                            + " for '" + i.getDirectoryName()
+                            + "', missing access rights.", iae);
                 }
             }
-            repositories = nrep;
+            repositories = newrepos;
+            if (verbose) {
+                elapsed.report(log, "done invalidating repositories");
+            }
         }
     }
 }

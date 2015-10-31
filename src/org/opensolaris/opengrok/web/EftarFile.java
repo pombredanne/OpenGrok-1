@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
  */
 
 package org.opensolaris.opengrok.web;
@@ -42,8 +42,8 @@ import org.opensolaris.opengrok.OpenGrokLogger;
  * Created on October 12, 2005
  *
  * A Eftar File has the following format
- * FILE --> Record  ( Record | tagString ) *
- * Record --> 64bit:Hash 16bit:childrenOffset  16bit:(numberChildren|lenthOfTag) 16bit:tagOffset
+ * FILE --&gt; Record  ( Record | tagString ) *
+ * Record --&gt; 64bit:Hash 16bit:childrenOffset  16bit:(numberChildren|lenthOfTag) 16bit:tagOffset
  *
  * It is a tree of tagged names,
  * doing binary search in sorted list of children
@@ -67,7 +67,7 @@ public class EftarFile {
         public Node(long hash, String tag) {
             this.hash = hash;
             this.tag = tag;
-            children = new TreeMap<Long, Node>();
+            children = new TreeMap<>();
         }
 
         public Node put(long hash, String desc) {
@@ -259,7 +259,7 @@ public class EftarFile {
         try {
             EftarFile ef = new EftarFile();
             ef.create(args);
-        } catch (Exception e) {
+        } catch (IOException e) {
             OpenGrokLogger.getLogger().log(Level.WARNING, "EftarFile error", e);
         }
     }

@@ -65,6 +65,11 @@ label {
 	margin: 0;
 }
 
+.edited {
+    font-size: 50%;
+    display: block;
+}
+
 #page { }
 
 .error { /* error messages */
@@ -75,6 +80,26 @@ label {
 	font-weight: bold;
 	color: #c20097;
 }
+
+/*
+ * Changesets colorization
+ * 1 is the most recent changeset
+ * class is set in web/Util.java
+ * 
+ * version class is generated for every version number
+ * by setting those classes in style.css (or generating them) you can adjust 
+ * the colorification for more versions than 10 versions
+ */
+.version_color_1 {  background-color: rgb( 0, 256, 0 ) !important;  }
+.version_color_2 {  background-color: rgb( 30, 256, 0 ) !important; }
+.version_color_3 {  background-color: rgb( 60, 256, 0 ) !important; }
+.version_color_4 {  background-color: rgb( 90, 256, 0 ) !important; }
+.version_color_5 {  background-color: rgb( 120, 256, 20 ) !important;}
+.version_color_6 {  background-color: rgb( 150, 256, 40 ) !important;}
+.version_color_7 {  background-color: rgb( 180, 256, 60 ) !important;}
+.version_color_8 {  background-color: rgb( 210, 256, 80 ) !important;}
+.version_color_9 {  background-color: rgb( 240, 256, 100 ) !important;}
+.version_color_10{  background-color: rgb( 256, 256, 120 ) !important;}
 
 /* ############### start of header ############## */
 #whole_header { }
@@ -468,6 +493,11 @@ table#dirlist { /* the "Name" column */
 	border-collapse: collapse;
 }
 
+/* The tablersorter jQuery plugin makes the header fields clickable. */
+#dirlist th {
+	cursor: pointer;
+}
+
 #dirlist .r, #dirlist .p {
 	background-image: url(./img/combined.png);
 	background-repeat: no-repeat;
@@ -571,6 +601,7 @@ a.xmb	{ /* member */			color: #090; font-weight: bold; }
 a.xf	{ /* function */		color: #00f; font-weight: bold; }
 a.xmt	{ /* method */			color: #00f; font-weight: bold; }
 a.xsr	{ /* subroutine */		color: #00f; font-weight: bold; }
+a.scope { /* scope */                   color: dodgerblue; font-weight: bold; padding-left: 1ex; }
 
 #man table, #man td  { /* #man == troff src */
 	background-color: #ddddcc;

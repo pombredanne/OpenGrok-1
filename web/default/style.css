@@ -55,7 +55,7 @@ input, button {
 for search and clear buttons will make it part of submit class ONLY */
 input.submit:hover, input.submit:active,
 button:hover, button:active {
-	color: #ffffff;        
+	color: #ffffff;
 }
 
 label {
@@ -65,6 +65,11 @@ label {
 	white-space: pre-wrap;
 	font-family: monospace;
 	margin: 0;
+}
+
+.edited {
+    font-size: 50%;
+    display: block;
 }
 
 #page { }
@@ -77,6 +82,26 @@ label {
 	font-weight: bold;
 	/* color: #c20097; */
 }
+
+/*
+ * Changesets colorization
+ * 1 is the most recent changeset
+ * class is set in web/Util.java
+ * 
+ * version class is generated for every version number
+ * by setting those classes in style.css (or generating them) you can adjust 
+ * the colorification for more versions than 10 versions
+ */
+.version_color_1 {  background-color: rgb( 0, 256, 0 ) !important;  }
+.version_color_2 {  background-color: rgb( 30, 256, 0 ) !important; }
+.version_color_3 {  background-color: rgb( 60, 256, 0 ) !important; }
+.version_color_4 {  background-color: rgb( 90, 256, 0 ) !important; }
+.version_color_5 {  background-color: rgb( 120, 256, 20 ) !important;}
+.version_color_6 {  background-color: rgb( 150, 256, 40 ) !important;}
+.version_color_7 {  background-color: rgb( 180, 256, 60 ) !important;}
+.version_color_8 {  background-color: rgb( 210, 256, 80 ) !important;}
+.version_color_9 {  background-color: rgb( 240, 256, 100 ) !important;}
+.version_color_10{  background-color: rgb( 256, 256, 120 ) !important;}
 
 /* ############### start of header ############## */
 #whole_header { }
@@ -122,7 +147,7 @@ label {
 #qtbl, #ptbl {
 	display: inline-block;
 	vertical-align: top;
-} 
+}
 
 #qtbl tr {
 	background: none; /* remove alternating colors */
@@ -153,7 +178,7 @@ label {
 
 #ptbl button {
 	font-size: small;
-}	
+}
 
 #ptbl button:first-of-type {
 	margin-left: 1em;
@@ -271,7 +296,7 @@ input.submit { /* start search button , clear button */
 	line-height: 1.25em;
 }
 
-#more b { /* highlight matches */ 
+#more b { /* highlight matches */
 	background-color: #ffff99;
 }
 
@@ -437,6 +462,11 @@ table#dirlist { /* the "Name" column */
 	border-collapse: collapse;
 }
 
+/* The tablersorter jQuery plugin makes the header fields clickable. */
+#dirlist th {
+	cursor: pointer;
+}
+
 #dirlist .r, #dirlist .p {
 	padding: 0;
 	margin: 0 0 0 1em;
@@ -533,6 +563,7 @@ a.xmb	{ /* member */			color: #090; font-weight: bold; }
 a.xf	{ /* function */		color: #00f; font-weight: bold; }
 a.xmt	{ /* method */			color: #00f; font-weight: bold; }
 a.xsr	{ /* subroutine */		color: #00f; font-weight: bold; }
+a.scope { /* scope */                   color: dodgerblue; font-weight: bold; padding-left: 1ex; }
 
 #man table, #man td  { /* #man == troff src */
 	background-color: #ddddcc;
@@ -575,6 +606,24 @@ a.xsr	{ /* subroutine */		color: #00f; font-weight: bold; }
 	display: none;
 }
 
+.intelli_window_style {
+       position: absolute;
+       width: 504px;
+       height: 300px;
+       overflow: auto;
+       z-index: 10;
+       border: solid 1px #c0c0c0;
+       background-color: rgba(233,255,219,0.75);
+       color: #000;
+       font-size: 12px;
+       font-family: monospace;
+       padding: 5px;
+}
+
+.intelli_window_style_hide {
+       display: none;
+}
+
 /* search result page */
 #results {
 }
@@ -586,7 +635,7 @@ a.xsr	{ /* subroutine */		color: #00f; font-weight: bold; }
 #results table {
 	border-collapse: collapse;
 	width: 100%;
-} 
+}
 
 #results .dir { /* directory row above matched files */
 	background-color: #c5d5a9;
@@ -623,7 +672,7 @@ a.xsr	{ /* subroutine */		color: #00f; font-weight: bold; }
 	color: #000;
 }
 
-#results i { /* match type description (method, interface etc.) */ 
+#results i { /* match type description (method, interface etc.) */
 	color: green;
 	font-weight: bold;
 	padding-left: 1ex;
@@ -671,7 +720,7 @@ a.xsr	{ /* subroutine */		color: #00f; font-weight: bold; }
 	vertical-align: middle;
 	background-image: url(./img/combined.png);
 	background-repeat: no-repeat;
-	background-position: -459px 0;
+	background-position: -379px 0;
 }
 /* ############### end of footer ############## */
 

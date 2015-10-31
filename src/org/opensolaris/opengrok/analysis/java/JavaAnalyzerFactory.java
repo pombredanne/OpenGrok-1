@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 
 package org.opensolaris.opengrok.analysis.java;
@@ -34,16 +34,16 @@ import org.opensolaris.opengrok.configuration.Project;
 import org.opensolaris.opengrok.history.Annotation;
 
 public class JavaAnalyzerFactory extends FileAnalyzerFactory {
+    
+    private static final String name = "Java";
+    
     private static final String[] SUFFIXES = {
-        "JAVA"
-    };
-
-    private static final String[] MAGICS = {
-        "/*"
+        "JAVA",
+        "AIDL",
     };
 
     public JavaAnalyzerFactory() {
-        super(null, null, SUFFIXES, MAGICS, null, "text/plain", Genre.PLAIN);
+        super(null, null, SUFFIXES, null, null, "text/plain", Genre.PLAIN, name);
     }
 
     @Override

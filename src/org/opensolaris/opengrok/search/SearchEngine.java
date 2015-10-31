@@ -18,11 +18,19 @@
  */
 
 /*
- * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
  */
 package org.opensolaris.opengrok.search;
 
-import java.io.*;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -35,6 +43,7 @@ import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.MultiReader;
+import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
@@ -45,20 +54,22 @@ import org.opensolaris.opengrok.OpenGrokLogger;
 import org.opensolaris.opengrok.analysis.CompatibleAnalyser;
 import org.opensolaris.opengrok.analysis.Definitions;
 import org.opensolaris.opengrok.analysis.FileAnalyzer.Genre;
+import org.opensolaris.opengrok.analysis.Scopes;
 import org.opensolaris.opengrok.configuration.Project;
 import org.opensolaris.opengrok.configuration.RuntimeEnvironment;
 import org.opensolaris.opengrok.history.HistoryException;
+import org.opensolaris.opengrok.index.IndexDatabase;
 import org.opensolaris.opengrok.search.Summary.Fragment;
 import org.opensolaris.opengrok.search.context.Context;
 import org.opensolaris.opengrok.search.context.HistoryContext;
+import org.opensolaris.opengrok.web.Prefix;
 
 /**
  * This is an encapsulation of the details on how to search in the index
  * database.
  *
- * @author Trond Norbye 2005
- * @author Lubos Kosco 2010 - upgrade to lucene 3.0.0 
- * @author Lubos Kosco 2012 - upgrade to lucene 4.0
+ * @author Trond Norbye 2005 
+ * @author Lubos Kosco - upgrade to lucene 3.x, 4.x, 5.x
  */
 public class SearchEngine {
 
@@ -70,9 +81,10 @@ public class SearchEngine {
     //increase the version - every change of below makes us incompatible with the
     //old index and we need to ask for reindex
     /**
-     * version of lucene index common for whole app
+     * version of lucene index common for whole application
      */
-    public static final Version LUCENE_VERSION = Version.LUCENE_47;
+    public static final Version LUCENE_VERSION = Version.LATEST;
+    public static final String LUCENE_VERSION_HELP = LUCENE_VERSION.major+"_"+LUCENE_VERSION.minor+"_"+LUCENE_VERSION.bugfix;
     /**
      * Holds value of property definition.
      */
@@ -109,8 +121,7 @@ public class SearchEngine {
     private final List<org.apache.lucene.document.Document> docs;
     private final char[] content = new char[1024 * 8];
     private String source;
-    private String data;
-    private static final boolean docsScoredInOrder = false;
+    private String data;    
     int hitsPerPage = RuntimeEnvironment.getInstance().getHitsPerPage();
     int cachePages = RuntimeEnvironment.getInstance().getCachePages();
     int totalHits = 0;
@@ -123,7 +134,7 @@ public class SearchEngine {
      * Creates a new instance of SearchEngine
      */
     public SearchEngine() {
-        docs = new ArrayList<org.apache.lucene.document.Document>();
+        docs = new ArrayList<>();
     }
 
     /**
@@ -147,7 +158,7 @@ public class SearchEngine {
         try {
             query = createQueryBuilder().build();
             ret = (query != null);
-        } catch (Exception e) {
+        } catch (ParseException e) {
             ret = false;
         }
 
@@ -162,18 +173,18 @@ public class SearchEngine {
      * @throws IOException
      */
     private void searchSingleDatabase(File root, boolean paging) throws IOException {
-        IndexReader ireader = DirectoryReader.open(FSDirectory.open(root));
+        IndexReader ireader = DirectoryReader.open(FSDirectory.open(root.toPath()));
         searcher = new IndexSearcher(ireader);
-        collector = TopScoreDocCollector.create(hitsPerPage * cachePages, docsScoredInOrder);
+        collector = TopScoreDocCollector.create(hitsPerPage * cachePages);
         searcher.search(query, collector);
         totalHits = collector.getTotalHits();
         if (!paging && totalHits > 0) {
-            collector = TopScoreDocCollector.create(totalHits, docsScoredInOrder);
+            collector = TopScoreDocCollector.create(totalHits);
             searcher.search(query, collector);
         }
         hits = collector.topDocs().scoreDocs;
-        for (int i = 0; i < hits.length; i++) {
-            int docId = hits[i].doc;
+        for (ScoreDoc hit : hits) {
+            int docId = hit.doc;
             Document d = searcher.doc(docId);
             docs.add(d);
         }
@@ -188,10 +199,10 @@ public class SearchEngine {
      */
     private void searchMultiDatabase(List<Project> root, boolean paging) throws IOException {
         IndexReader[] subreaders = new IndexReader[root.size()];
-        File droot = new File(RuntimeEnvironment.getInstance().getDataRootFile(), "index");
+        File droot = new File(RuntimeEnvironment.getInstance().getDataRootFile(), IndexDatabase.INDEX_DIR);
         int ii = 0;
         for (Project project : root) {
-            IndexReader ireader = (DirectoryReader.open(FSDirectory.open(new File(droot, project.getPath()))));
+            IndexReader ireader = (DirectoryReader.open(FSDirectory.open(new File(droot, project.getPath()).toPath())));
             subreaders[ii++] = ireader;
         }
         MultiReader searchables = new MultiReader(subreaders, true);
@@ -202,16 +213,16 @@ public class SearchEngine {
         } else {
             searcher = new IndexSearcher(searchables);
         }
-        collector = TopScoreDocCollector.create(hitsPerPage * cachePages, docsScoredInOrder);
+        collector = TopScoreDocCollector.create(hitsPerPage * cachePages);
         searcher.search(query, collector);
         totalHits = collector.getTotalHits();
         if (!paging && totalHits > 0) {
-            collector = TopScoreDocCollector.create(totalHits, docsScoredInOrder);
+            collector = TopScoreDocCollector.create(totalHits);
             searcher.search(query, collector);
         }
         hits = collector.topDocs().scoreDocs;
-        for (int i = 0; i < hits.length; i++) {
-            int docId = hits[i].doc;
+        for (ScoreDoc hit : hits) {
+            int docId = hit.doc;
             Document d = searcher.doc(docId);
             docs.add(d);
         }
@@ -223,7 +234,7 @@ public class SearchEngine {
 
     /**
      * Execute a search. Before calling this function, you must set the
-     * appropriate seach critera with the set-functions. Note that this search
+     * appropriate search criteria with the set-functions. Note that this search
      * will return the first cachePages of hitsPerPage, for more you need to
      * call more
      *
@@ -240,7 +251,7 @@ public class SearchEngine {
             query = queryBuilder.build();
             if (query != null) {
                 RuntimeEnvironment env = RuntimeEnvironment.getInstance();
-                File root = new File(env.getDataRootFile(), "index");
+                File root = new File(env.getDataRootFile(), IndexDatabase.INDEX_DIR);
 
                 if (env.hasProjects()) {
                     // search all projects
@@ -308,7 +319,7 @@ public class SearchEngine {
         //TODO check if below fits for if end=old hits.length, or it should include it
         if (end > hits.length & !allCollected) {
             //do the requery, we want more than 5 pages
-            collector = TopScoreDocCollector.create(totalHits, docsScoredInOrder);
+            collector = TopScoreDocCollector.create(totalHits);
             try {
                 searcher.search(query, collector);
             } catch (Exception e) { // this exception should never be hit, since search() will hit this before
@@ -337,13 +348,18 @@ public class SearchEngine {
             boolean hasContext = false;
             try {
                 Document doc = docs.get(ii);
-                String filename = doc.get("path");
+                String filename = doc.get(QueryBuilder.PATH);
 
-                Genre genre = Genre.get(doc.get("t"));
+                Genre genre = Genre.get(doc.get(QueryBuilder.T));
                 Definitions tags = null;
-                IndexableField tagsField = doc.getField("tags");
+                IndexableField tagsField = doc.getField(QueryBuilder.TAGS);
                 if (tagsField != null) {
                     tags = Definitions.deserialize(tagsField.binaryValue().bytes);
+                }
+                Scopes scopes = null;
+                IndexableField scopesField = doc.getField(QueryBuilder.SCOPES);
+                if (scopesField != null) {
+                    scopes = Scopes.deserialize(scopesField.binaryValue().bytes);
                 }
                 int nhits = docs.size();
 
@@ -352,12 +368,12 @@ public class SearchEngine {
                         if (Genre.PLAIN == genre && (source != null)) {
                             hasContext = sourceContext.getContext(new InputStreamReader(new FileInputStream(source
                                     + filename)), null, null, null, filename,
-                                    tags, nhits > 100, false, ret);
+                                    tags, nhits > 100, false, ret, scopes);
                         } else if (Genre.XREFABLE == genre && data != null && summarizer != null) {
-                            int l = 0;
+                            int l;
                             try (Reader r = RuntimeEnvironment.getInstance().isCompressXref() ?
-                                     new HTMLStripCharFilter(new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(data + "/xref" + filename + ".gz"))))) :
-                                     new HTMLStripCharFilter(new BufferedReader(new FileReader(data + "/xref" + filename)))) {
+                                     new HTMLStripCharFilter(new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(data + Prefix.XREF_P + filename + ".gz"))))) :
+                                     new HTMLStripCharFilter(new BufferedReader(new FileReader(data + Prefix.XREF_P + filename)))) {
                                 l = r.read(content);
                             }
                             //TODO FIX below fragmenter according to either summarizer or context (to get line numbers, might be hard, since xref writers will need to be fixed too, they generate just one line of html code now :( )
@@ -375,11 +391,11 @@ public class SearchEngine {
                             }
                         } else {
                             OpenGrokLogger.getLogger().log(Level.WARNING, "Unknown genre: {0} for {1}", new Object[]{genre, filename});
-                            hasContext |= sourceContext.getContext(null, null, null, null, filename, tags, false, false, ret);
+                            hasContext |= sourceContext.getContext(null, null, null, null, filename, tags, false, false, ret, scopes);
                         }
                     } catch (FileNotFoundException exp) {
                         OpenGrokLogger.getLogger().log(Level.WARNING, "Couldn''t read summary from {0} ({1})", new Object[]{filename, exp.getMessage()});
-                        hasContext |= sourceContext.getContext(null, null, null, null, filename, tags, false, false, ret);
+                        hasContext |= sourceContext.getContext(null, null, null, null, filename, tags, false, false, ret, scopes);
                     }
                 }
                 if (historyContext != null) {
@@ -388,13 +404,7 @@ public class SearchEngine {
                 if (!hasContext) {
                     ret.add(new Hit(filename, "...", "", false, alt));
                 }
-            } catch (IOException e) {
-                OpenGrokLogger.getLogger().log(
-                        Level.WARNING, SEARCH_EXCEPTION_MSG, e);
-            } catch (ClassNotFoundException e) {
-                OpenGrokLogger.getLogger().log(
-                        Level.WARNING, SEARCH_EXCEPTION_MSG, e);
-            } catch (HistoryException e) {
+            } catch (IOException | ClassNotFoundException | HistoryException e) {
                 OpenGrokLogger.getLogger().log(
                         Level.WARNING, SEARCH_EXCEPTION_MSG, e);
             }
