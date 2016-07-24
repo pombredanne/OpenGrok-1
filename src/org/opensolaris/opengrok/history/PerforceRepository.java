@@ -31,10 +31,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.opensolaris.opengrok.OpenGrokLogger;
+import org.opensolaris.opengrok.logger.LoggerFactory;
 import org.opensolaris.opengrok.util.Executor;
 
 /**
@@ -43,6 +44,8 @@ import org.opensolaris.opengrok.util.Executor;
  * @author Emilio Monti - emilmont@gmail.com
  */
 public class PerforceRepository extends Repository {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(PerforceRepository.class);
 
     private static final long serialVersionUID = 1L;
     /**
@@ -78,8 +81,8 @@ public class PerforceRepository extends Repository {
         ensureCommand(CMD_PROPERTY_KEY, CMD_FALLBACK);
         cmd.add(RepoCommand);
         cmd.add("annotate");
-        cmd.add("-q");
-        cmd.add(file.getPath() + ((rev == null) ? "" : "#" + rev));
+        cmd.add("-qci");
+        cmd.add(file.getPath() + getRevisionCmd(rev));
 
         Executor executor = new Executor(cmd, file.getParentFile());
         executor.exec();
@@ -95,13 +98,13 @@ public class PerforceRepository extends Repository {
                     String author = revAuthor.get(revision);
                     a.addLine(revision, author, true);
                 } else {
-                    OpenGrokLogger.getLogger().log(Level.SEVERE,
+                    LOGGER.log(Level.SEVERE,
                             "Error: did not find annotation in line {0}: [{1}]",
                             new Object[]{lineno, line});
                 }
             }
         } catch (IOException e) {
-            OpenGrokLogger.getLogger().log(Level.SEVERE,
+            LOGGER.log(Level.SEVERE,
                     "Error: Could not read annotations for " + file, e);
         }
         return a;
@@ -114,7 +117,7 @@ public class PerforceRepository extends Repository {
         cmd.add(RepoCommand);
         cmd.add("print");
         cmd.add("-q");
-        cmd.add(basename + ((rev == null) ? "" : "#" + rev));
+        cmd.add(basename + getRevisionCmd(rev));
         Executor executor = new Executor(cmd, new File(parent));
         executor.exec();
         return new ByteArrayInputStream(executor.getOutputString().getBytes());
@@ -222,5 +225,16 @@ public class PerforceRepository extends Repository {
     @Override
     String determineBranch() {
         return null;
+    }
+    /**
+     * Parse internal rev number and returns it in format suitable for P4 command-line.
+     * @param rev Internal rev number.
+     * @return rev number formatted for P4 command-line.
+     */
+    public static String getRevisionCmd(String rev) {
+        if(rev == null || "".equals(rev)) {
+            return "";
+        }
+        return "@" + rev;
     }
 }

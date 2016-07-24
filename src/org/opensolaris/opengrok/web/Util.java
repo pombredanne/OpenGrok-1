@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
  * Portions Copyright 2011 Jens Elkner.
  */
 package org.opensolaris.opengrok.web;
@@ -45,16 +45,18 @@ import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 import org.opensolaris.opengrok.Info;
-import org.opensolaris.opengrok.OpenGrokLogger;
 import org.opensolaris.opengrok.configuration.RuntimeEnvironment;
 import org.opensolaris.opengrok.history.Annotation;
 import org.opensolaris.opengrok.history.HistoryException;
 import org.opensolaris.opengrok.history.HistoryGuru;
+import org.opensolaris.opengrok.logger.LoggerFactory;
 
 /**
  * Class for useful functions.
  */
 public final class Util {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(Util.class);
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
@@ -90,7 +92,7 @@ public final class Util {
      * Append a character sequence to the given destination whereby special
      * characters for HTML are escaped accordingly.
      *
-     * @param q a character sequence to esacpe
+     * @param q a character sequence to escape
      * @param dest where to append the character sequence to
      * @throws IOException if an error occurred when writing to {@code dest}
      */
@@ -374,10 +376,10 @@ public final class Util {
     }
 
     /**
-     * Generate a regex that matches the specified character. Escape it in case
-     * it is a character that has a special meaning in a regex.
+     * Generate a regexp that matches the specified character. Escape it in case
+     * it is a character that has a special meaning in a regexp.
      *
-     * @param c the character that the regex should match
+     * @param c the character that the regexp should match
      * @return a six-character string on the form <tt>&#92;u</tt><i>hhhh</i>
      */
     private static String escapeForRegex(char c) {
@@ -395,9 +397,9 @@ public final class Util {
 
     /**
      * Convert the given size into a human readable string.
-     * 
-     * NOTE: when changing the output of this function make sure to adapt
-     *       the jQuery tablesorter custom parsers in web/httpheader.jspf
+     *
+     * NOTE: when changing the output of this function make sure to adapt the
+     * jQuery tablesorter custom parsers in web/httpheader.jspf
      *
      * @param num size to convert.
      * @return a readable string
@@ -474,10 +476,18 @@ public final class Util {
      */
     public static void readableLine(int num, Writer out, Annotation annotation,
             String userPageLink, String userPageSuffix, String project)
-            throws IOException {
+            throws IOException
+    {    
+        readableLine(num, out, annotation, userPageLink, userPageSuffix, project, false);
+    }
+    
+    public static void readableLine(int num, Writer out, Annotation annotation,
+            String userPageLink, String userPageSuffix, String project, boolean skipNewline)
+            throws IOException
+    {
         // this method should go to JFlexXref
         String snum = String.valueOf(num);
-        if (num > 1) {
+        if (num > 1 && !skipNewline) {
             out.write("\n");
         }
         out.write(anchorClassStart);
@@ -496,14 +506,14 @@ public final class Util {
             if (enabled) {
                 out.write(anchorClassStart);
                 out.write("r");
-                if( annotation.getFileVersion(r) != 0) {
+                if (annotation.getFileVersion(r) != 0) {
                     /*
                         version number, 1 is the most recent
                         generates css classes version_color_n
-                    */
-                    int versionNumber = Math.max( 1, 
-                                                  annotation.getFileVersionsCount() - 
-                                                  annotation.getFileVersion(r) + 1 );
+                     */
+                    int versionNumber = Math.max(1,
+                            annotation.getFileVersionsCount()
+                            - annotation.getFileVersion(r) + 1);
                     out.write(" version_color_" + versionNumber);
                 }
                 out.write("\" href=\"");
@@ -515,9 +525,9 @@ public final class Util {
                 if (msg != null) {
                     out.write(msg);
                 }
-                if(annotation.getFileVersion(r) != 0) {
-                    out.write("&lt;br/&gt;version: " + annotation.getFileVersion(r) + "/" + 
-                              annotation.getFileVersionsCount());
+                if (annotation.getFileVersion(r) != 0) {
+                    out.write("&lt;br/&gt;version: " + annotation.getFileVersion(r) + "/"
+                            + annotation.getFileVersionsCount());
                 }
                 out.write(closeQuotedTag);
             }
@@ -533,10 +543,10 @@ public final class Util {
                 // Write link to search the revision in current project.
                 out.write(anchorClassStart);
                 out.write("search\" href=\"" + env.getUrlPrefix());
-                out.write("defs=&refs=&path=");
+                out.write("defs=&amp;refs=&amp;path=");
                 out.write(project);
-                out.write("&hist=" + URIEncode(r));
-                out.write("&type=\" title=\"Search history for this changeset");
+                out.write("&amp;hist=" + URIEncode(r));
+                out.write("&amp;type=\" title=\"Search history for this changeset");
                 out.write(closeQuotedTag);
                 out.write("S");
                 out.write(anchorEnd);
@@ -632,7 +642,7 @@ public final class Util {
     }
 
     /**
-     * wrapper arround UTF-8 URL encoding of a string
+     * wrapper around UTF-8 URL encoding of a string
      *
      * @param q query to be encoded. If {@code null}, an empty string will be
      * used instead.
@@ -644,7 +654,7 @@ public final class Util {
             return q == null ? "" : URLEncoder.encode(q, "UTF-8");
         } catch (UnsupportedEncodingException e) {
             // Should not happen. UTF-8 must be supported by JVMs.
-            Logger.getLogger(Util.class.getName()).log(
+            LOGGER.log(
                     Level.WARNING, "Failed to URL-encode UTF-8: ", e);
         }
         return null;
@@ -731,12 +741,16 @@ public final class Util {
         char c;
         for (int i = 0; i < q.length(); i++) {
             c = q.charAt(i);
-            if (c == '"') {
-                sb.append("&quot;");
-            } else if (c == '&') {
-                sb.append("&amp;");
-            } else {
-                sb.append(c);
+            switch (c) {
+                case '"':
+                    sb.append("&quot;");
+                    break;
+                case '&':
+                    sb.append("&amp;");
+                    break;
+                default:
+                    sb.append(c);
+                    break;
             }
         }
         return sb.toString();
@@ -832,7 +846,7 @@ public final class Util {
     }
 
     /**
-     * Just read the given source and dump as is to the given destionation. Does
+     * Just read the given source and dump as is to the given destination. Does
      * nothing, if one or more of the parameters is {@code null}.
      *
      * @param out write destination
@@ -852,7 +866,7 @@ public final class Util {
     }
 
     /**
-     * Silently dump a file to the given destionation. All {@link IOException}s
+     * Silently dump a file to the given destination. All {@link IOException}s
      * gets caught and logged, but not re-thrown.
      *
      * @param out dump destination
@@ -869,7 +883,7 @@ public final class Util {
     }
 
     /**
-     * Silently dump a file to the given destionation. All {@link IOException}s
+     * Silently dump a file to the given destination. All {@link IOException}s
      * gets caught and logged, but not re-thrown.
      *
      * @param out dump destination
@@ -885,15 +899,15 @@ public final class Util {
         }
         try (Reader in = compressed
                 ? new InputStreamReader(new GZIPInputStream(
-                                new FileInputStream(file)))
+                        new FileInputStream(file)))
                 : new FileReader(file)) {
-                            dump(out, in);
-                            return true;
-                        } catch (IOException e) {
-                            OpenGrokLogger.getLogger().log(Level.WARNING,
-                                    "An error occured while piping file " + file + ": ", e);
-                        }
-                        return false;
+            dump(out, in);
+            return true;
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING,
+                    "An error occured while piping file " + file + ": ", e);
+        }
+        return false;
     }
 
     /**

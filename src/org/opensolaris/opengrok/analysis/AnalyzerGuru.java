@@ -18,7 +18,7 @@
  */
 
 /*
- * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
  */
 package org.opensolaris.opengrok.analysis;
 
@@ -37,6 +37,8 @@ import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import org.apache.lucene.document.DateTools;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -46,7 +48,6 @@ import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.util.BytesRef;
-import org.opensolaris.opengrok.OpenGrokLogger;
 import org.opensolaris.opengrok.analysis.FileAnalyzer.Genre;
 import org.opensolaris.opengrok.analysis.archive.BZip2AnalyzerFactory;
 import org.opensolaris.opengrok.analysis.archive.GZIPAnalyzerFactory;
@@ -65,6 +66,7 @@ import org.opensolaris.opengrok.analysis.executables.JavaClassAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.fortran.FortranAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.golang.GolangAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.haskell.HaskellAnalyzerFactory;
+import org.opensolaris.opengrok.analysis.lua.LuaAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.java.JavaAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.javascript.JavaScriptAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.lisp.LispAnalyzerFactory;
@@ -74,6 +76,7 @@ import org.opensolaris.opengrok.analysis.plain.PlainAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.plain.XMLAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.python.PythonAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.scala.ScalaAnalyzerFactory;
+import org.opensolaris.opengrok.analysis.clojure.ClojureAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.sh.ShAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.sql.PLSQLAnalyzerFactory;
 import org.opensolaris.opengrok.analysis.sql.SQLAnalyzerFactory;
@@ -85,6 +88,7 @@ import org.opensolaris.opengrok.history.Annotation;
 import org.opensolaris.opengrok.history.HistoryException;
 import org.opensolaris.opengrok.history.HistoryGuru;
 import org.opensolaris.opengrok.history.HistoryReader;
+import org.opensolaris.opengrok.logger.LoggerFactory;
 import org.opensolaris.opengrok.search.QueryBuilder;
 import org.opensolaris.opengrok.web.Util;
 
@@ -98,6 +102,8 @@ import org.opensolaris.opengrok.web.Util;
  * @author Chandan
  */
 public class AnalyzerGuru {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AnalyzerGuru.class);
 
     /**
      * The default {@code FileAnalyzerFactory} instance.
@@ -176,11 +182,13 @@ public class AnalyzerGuru {
             new LispAnalyzerFactory(),
             new TclAnalyzerFactory(),
             new ScalaAnalyzerFactory(),
+            new ClojureAnalyzerFactory(),
             new SQLAnalyzerFactory(),
             new PLSQLAnalyzerFactory(),
             new FortranAnalyzerFactory(),
             new HaskellAnalyzerFactory(),
-            new GolangAnalyzerFactory()
+            new GolangAnalyzerFactory(),
+            new LuaAnalyzerFactory()
         };
 
         for (FileAnalyzerFactory analyzer : analyzers) {
@@ -325,7 +333,7 @@ public class AnalyzerGuru {
                 // date = hr.getLastCommentDate() //RFE
             }
         } catch (HistoryException e) {
-            OpenGrokLogger.getLogger().log(Level.WARNING, "An error occurred while reading history: ", e);
+            LOGGER.log(Level.WARNING, "An error occurred while reading history: ", e);
         }
         doc.add(new Field(QueryBuilder.DATE, date, string_ft_stored_nanalyzed_norms));
         doc.add(new SortedDocValuesField(QueryBuilder.DATE, new BytesRef(date)));
@@ -636,7 +644,7 @@ public class AnalyzerGuru {
      * @param sig a sequence of bytes from which to remove the BOM
      * @return a string without the byte-order marker, or <code>null</code> if
      * the string doesn't start with a BOM
-     * @throws java.io.IOException
+     * @throws java.io.IOException in case of any read error
      */
     public static String stripBOM(byte[] sig) throws IOException {
         for (Map.Entry<String, byte[]> entry : BOMS.entrySet()) {

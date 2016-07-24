@@ -31,6 +31,7 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -38,7 +39,7 @@ import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
-import org.opensolaris.opengrok.OpenGrokLogger;
+import org.opensolaris.opengrok.logger.LoggerFactory;
 import org.opensolaris.opengrok.util.Executor;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -55,6 +56,8 @@ import org.xml.sax.ext.DefaultHandler2;
  * @author Trond Norbye
  */
 public class SubversionRepository extends Repository {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(SubversionRepository.class);
 
     private static final long serialVersionUID = 1L;
 
@@ -118,8 +121,7 @@ public class SubversionRepository extends Repository {
                     String url
                             = getValue(document.getElementsByTagName("url").item(0));
                     if (url == null) {
-                        OpenGrokLogger.getLogger()
-                                .log(Level.WARNING,
+                        LOGGER.log(Level.WARNING,
                                         "svn info did not contain an URL for [{0}]. Assuming remote repository.",
                                         directoryName);
                         setRemote(true);
@@ -135,18 +137,17 @@ public class SubversionRepository extends Repository {
                         rootFound = Boolean.TRUE;
                     }
                 } catch (SAXException saxe) {
-                    OpenGrokLogger.getLogger().log(Level.WARNING,
+                    LOGGER.log(Level.WARNING,
                             "Parser error parsing svn output", saxe);
                 } catch (ParserConfigurationException pce) {
-                    OpenGrokLogger.getLogger().log(Level.WARNING,
+                    LOGGER.log(Level.WARNING,
                             "Parser configuration error parsing svn output", pce);
                 } catch (IOException ioe) {
-                    OpenGrokLogger.getLogger().log(Level.WARNING,
+                    LOGGER.log(Level.WARNING,
                             "IOException reading from svn process", ioe);
                 }
             } else {
-                OpenGrokLogger.getLogger()
-                        .log(Level.WARNING,
+                LOGGER.log(Level.WARNING,
                                 "Failed to execute svn info for [{0}]. Repository disabled.",
                                 directoryName);
             }
@@ -161,7 +162,8 @@ public class SubversionRepository extends Repository {
      *
      * @param file The file to retrieve history for
      * @param sinceRevision the revision number immediately preceding the first
-     * revision we want, or {@code null} to fetch the entire history
+     *                      revision we want, or {@code null} to fetch the entire
+     *                      history
      * @return An Executor ready to be started
      */
     Executor getHistoryLogExecutor(final File file, String sinceRevision) {
@@ -169,7 +171,7 @@ public class SubversionRepository extends Repository {
         try {
             abs = file.getCanonicalPath();
         } catch (IOException exp) {
-            OpenGrokLogger.getLogger().log(Level.SEVERE,
+            LOGGER.log(Level.SEVERE,
                     "Failed to get canonical path: {0}", exp.getClass().toString());
             return null;
         }
@@ -198,7 +200,7 @@ public class SubversionRepository extends Repository {
             cmd.add(escapeFileName(filename));
         }
 
-        return new Executor(cmd, new File(directoryName));
+        return new Executor(cmd, new File(directoryName), sinceRevision != null);
     }
 
     @Override
@@ -211,7 +213,7 @@ public class SubversionRepository extends Repository {
         try {
             filepath = (new File(parent, basename)).getCanonicalPath();
         } catch (IOException exp) {
-            OpenGrokLogger.getLogger().log(Level.SEVERE,
+            LOGGER.log(Level.SEVERE,
                     "Failed to get canonical path: {0}", exp.getClass().toString());
             return null;
         }
@@ -340,7 +342,7 @@ public class SubversionRepository extends Repository {
                 saxParser.parse(in, handler);
                 ret = handler.annotation;
             } catch (Exception e) {
-                OpenGrokLogger.getLogger().log(Level.SEVERE,
+                LOGGER.log(Level.SEVERE,
                         "An error occurred while parsing the xml output", e);
             }
         } finally {
@@ -438,7 +440,7 @@ public class SubversionRepository extends Repository {
                 if (line.startsWith("URL:")) {
                     String parts[] = line.split("\\s+");
                     if (parts.length != 2) {
-                        OpenGrokLogger.getLogger().log(Level.WARNING,
+                        LOGGER.log(Level.WARNING,
                                 "Failed to get parent for {0}", directoryName);
                     }
                     parent = parts[1];

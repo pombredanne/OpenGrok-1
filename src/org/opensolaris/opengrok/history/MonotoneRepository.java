@@ -33,9 +33,10 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.opensolaris.opengrok.OpenGrokLogger;
+import org.opensolaris.opengrok.logger.LoggerFactory;
 import org.opensolaris.opengrok.util.Executor;
 
 /**
@@ -44,6 +45,8 @@ import org.opensolaris.opengrok.util.Executor;
  * @author Trond Norbye
  */
 public class MonotoneRepository extends Repository {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(MonotoneRepository.class);
 
     private static final long serialVersionUID = 1L;
     /**
@@ -91,7 +94,7 @@ public class MonotoneRepository extends Repository {
 
             ret = new BufferedInputStream(new ByteArrayInputStream(out.toByteArray()));
         } catch (Exception exp) {
-            OpenGrokLogger.getLogger().log(Level.SEVERE,
+            LOGGER.log(Level.SEVERE,
                     "Failed to get history: {0}", exp.getClass().toString());
         } finally {
             // Clean up zombie-processes...
@@ -108,7 +111,16 @@ public class MonotoneRepository extends Repository {
         return ret;
     }
 
-    Executor getHistoryLogExecutor(File file, String changeset)
+    /**
+     * Get an executor to be used for retrieving the history log for the named
+     * file or directory.
+     *
+     * @param file The file or directory to retrieve history for
+     * @param sinceRevision the oldest changeset to return from the executor, or
+     *                  {@code null} if all changesets should be returned
+     * @return An Executor ready to be started
+     */
+    Executor getHistoryLogExecutor(File file, String sinceRevision)
             throws IOException {
         String abs = file.getCanonicalPath();
         String filename = "";
@@ -121,9 +133,9 @@ public class MonotoneRepository extends Repository {
         cmd.add(RepoCommand);
         cmd.add("log");
 
-        if (changeset != null) {
+        if (sinceRevision != null) {
             cmd.add("--to");
-            cmd.add(changeset);
+            cmd.add(sinceRevision);
         }
 
         cmd.add("--no-graph");
@@ -131,7 +143,7 @@ public class MonotoneRepository extends Repository {
         cmd.add("--no-format-dates");
         cmd.add(filename);
 
-        return new Executor(cmd, new File(directoryName));
+        return new Executor(cmd, new File(directoryName), sinceRevision != null);
     }
     /**
      * Pattern used to extract author/revision from hg annotate.
@@ -288,7 +300,7 @@ public class MonotoneRepository extends Repository {
                 if (line.startsWith("database") && line.contains("default-server")) {
                     String parts[] = line.split("\\s+");
                     if (parts.length != 3) {
-                        OpenGrokLogger.getLogger().log(Level.WARNING,
+                        LOGGER.log(Level.WARNING,
                                 "Failed to get parent for {0}", directoryName);
                     }
                     parent = parts[2];

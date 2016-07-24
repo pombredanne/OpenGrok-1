@@ -18,10 +18,12 @@
  */
 
 /*
- * Copyright (c) 2011 Trond Norbye
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Trond Norbye 
  */
 package org.opensolaris.opengrok.util;
+
+import org.opensolaris.opengrok.logger.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -41,7 +43,7 @@ import java.util.logging.Logger;
  */
 public final class IOUtils {
 
-    private static final Logger log = Logger.getLogger(IOUtils.class.getName());
+    private static final Logger LOGGER = LoggerFactory.getLogger(IOUtils.class);
 
     private IOUtils() {
         // singleton
@@ -52,7 +54,7 @@ public final class IOUtils {
             try {
                 c.close();
             } catch (IOException e) {
-                log.log(Level.WARNING, "Failed to close resource: ", e);
+                LOGGER.log(Level.WARNING, "Failed to close resource: ", e);
             }
         }
     }
@@ -60,7 +62,7 @@ public final class IOUtils {
     /**
      * Delete directory recursively. This method does not follow symlinks.
      * @param path directory to delete
-     * @throws IOException
+     * @throws IOException if any read error
      */
     public static void removeRecursive(Path path) throws IOException
     {

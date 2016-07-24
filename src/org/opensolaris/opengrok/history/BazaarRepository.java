@@ -34,10 +34,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeSet;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.opensolaris.opengrok.OpenGrokLogger;
 import org.opensolaris.opengrok.configuration.RuntimeEnvironment;
+import org.opensolaris.opengrok.logger.LoggerFactory;
 import org.opensolaris.opengrok.util.Executor;
 
 /**
@@ -45,6 +46,8 @@ import org.opensolaris.opengrok.util.Executor;
  *
  */
 public class BazaarRepository extends Repository {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(BazaarRepository.class);
 
     private static final long serialVersionUID = 1L;
     /**
@@ -67,6 +70,8 @@ public class BazaarRepository extends Repository {
      * file.
      *
      * @param file The file to retrieve history for
+     * @param sinceRevision the oldest changeset to return from the executor, or
+     *                      {@code null} if all changesets should be returned
      * @return An Executor ready to be started
      */
     Executor getHistoryLogExecutor(final File file, final String sinceRevision)
@@ -92,7 +97,7 @@ public class BazaarRepository extends Repository {
             cmd.add(sinceRevision + "..-1");
         }
 
-        return new Executor(cmd, new File(getDirectoryName()));
+        return new Executor(cmd, new File(getDirectoryName()), sinceRevision != null);
     }
 
     @Override
@@ -122,7 +127,7 @@ public class BazaarRepository extends Repository {
 
             ret = new ByteArrayInputStream(out.toByteArray());
         } catch (Exception exp) {
-            OpenGrokLogger.getLogger().log(Level.SEVERE,
+            LOGGER.log(Level.SEVERE,
                     "Failed to get history: " + exp.getClass().toString(), exp);
         } finally {
             // Clean up zombie-processes...
@@ -171,7 +176,7 @@ public class BazaarRepository extends Repository {
         int status = exec.exec();
 
         if (status != 0) {
-            OpenGrokLogger.getLogger().log(Level.WARNING,
+            LOGGER.log(Level.WARNING,
                     "Failed to get annotations for: \"{0}\" Exit code: {1}",
                     new Object[]{file.getAbsolutePath(), String.valueOf(status)});
         }
@@ -194,7 +199,7 @@ public class BazaarRepository extends Repository {
                 String author = matcher.group(2).trim();
                 ret.addLine(rev, author, true);
             } else {
-                OpenGrokLogger.getLogger().log(Level.SEVERE,
+                LOGGER.log(Level.SEVERE,
                         "Error: did not find annotation in line {0}: [{1}]",
                         new Object[]{String.valueOf(lineno), line});
             }
@@ -326,10 +331,10 @@ public class BazaarRepository extends Repository {
                 }
             }
         } catch (IOException e) {
-            OpenGrokLogger.getLogger().log(Level.WARNING, "Failed to read tag list: {0}", e.getMessage());
+            LOGGER.log(Level.WARNING, "Failed to read tag list: {0}", e.getMessage());
             this.tagList = null;
         } catch (HistoryException e) {
-            OpenGrokLogger.getLogger().log(Level.WARNING, "Failed to parse tag list: {0}", e.getMessage());
+            LOGGER.log(Level.WARNING, "Failed to parse tag list: {0}", e.getMessage());
             this.tagList = null;
         }
 
@@ -353,7 +358,7 @@ public class BazaarRepository extends Repository {
         cmd.add("config");
         cmd.add("parent_location");
         Executor executor = new Executor(cmd, directory);
-        if (executor.exec() != 0) {
+        if (executor.exec(false) != 0) {
             throw new IOException(executor.getErrorString());
         }
 

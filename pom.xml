@@ -18,7 +18,7 @@ information: Portions Copyright [yyyy] [name of copyright owner]
 
 CDDL HEADER END
 
-Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -52,12 +52,13 @@ Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
     <modules>
         <module>jrcs</module>
+        <module>plugins</module>
         <module>opengrok-indexer</module>
         <module>opengrok-web</module>
     </modules>
 
     <properties>
-	<lucene.version>5.3.1</lucene.version>
+	<lucene.version>6.1.0</lucene.version>
 	<mavenjavadocplugin.version>2.9.1</mavenjavadocplugin.version>
         <compileSource>1.8</compileSource>
         <compileTarget>1.8</compileTarget>
@@ -74,7 +75,7 @@ Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
             <dependency>
                 <groupId>org.apache.bcel</groupId>
                 <artifactId>bcel</artifactId>
-                <version>5.2</version>
+                <version>6.0</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.lucene</groupId>
@@ -141,16 +142,16 @@ Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>			
+                <configuration>
                         <forkCount>1</forkCount>
-                        <reuseForks>false</reuseForks>			
+                        <reuseForks>false</reuseForks>
                 </configuration>
                 <version>2.16</version>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.7.4</version>                
+                <version>0.7.7</version>
             </plugin>
 	    <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -255,9 +256,15 @@ Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
             <url>http://repo.maven.apache.org/maven2/</url>
             <layout>default</layout>
         </repository>
+        <repository>
+            <id>apache.snapshots</id>
+            <name>apache.snapshots</name>
+            <url>http://repository.apache.org/snapshots/</url>
+            <layout>default</layout>
+        </repository>
     </repositories>
 
-    <pluginRepositories>        
+    <pluginRepositories>
         <pluginRepository>
             <id>maven.org</id>
             <url>http://repo.maven.apache.org/maven2/</url>

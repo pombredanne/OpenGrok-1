@@ -18,7 +18,7 @@ information: Portions Copyright [yyyy] [name of copyright owner]
 
 CDDL HEADER END
 
-Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
 Portions Copyright 2011 Jens Elkner.
 
 --%><%--
@@ -40,7 +40,7 @@ org.opensolaris.opengrok.web.Util"%><%
     cfg = PageConfig.get(request);
     String redir = cfg.canProcess();
     if (redir == null || redir.length() > 0) {
-        if (redir == null) {
+        if (redir == null) {            
             response.sendError(HttpServletResponse.SC_NOT_FOUND);
         } else {
             response.sendRedirect(redir);
@@ -69,18 +69,17 @@ org.opensolaris.opengrok.web.Util"%><%
 
     String uriEncodedPath = cfg.getUriEncodedPath();
     String rev = cfg.getRequestedRevision();
-%><%@
+%>
+<%@
 
 include file="httpheader.jspf"
 
-%><body>
+        %><body>
 <script type="text/javascript">/* <![CDATA[ */
-    document.hash = '<%= cfg.getDocumentHash()
-    %>';document.rev = '<%= rev
-    %>';document.link = '<%= context + Prefix.XREF_P + uriEncodedPath
-    %>';document.annotate = <%= cfg.annotate() %>;
-    document.domReady.push(function() {domReadyMast();});
-    document.pageReady.push(function() { pageReadyMast();});
+    document.rev = getParameter("r");
+    document.annotate = <%= cfg.annotate() %>;
+    document.domReady.push(domReadyMast);
+    document.pageReady.push(pageReadyMast);
 /* ]]> */</script>
 <div id="page">
     <div id="whole_header">
@@ -119,10 +118,8 @@ include file="pageheader.jspf"
             href="#" onclick="javascript:toggle_annotations(); return false;"
             title="Show or hide line annotation(commit revisions,authors)."
             ><span class="annotate"></span>Annotate</a></span><span
-            id="toggle-annotate"><a href="<%=
-                context + Prefix.XREF_P + uriEncodedPath
-                + (rev.length() == 0 ? "" : "?") + rev
-            %>"><span class="annotate"></span>Annotate</a></span></li><%
+            id="toggle-annotate"><a href="#"><span class="annotate"></span>
+            Annotate</a></span></li><%
     } else {
         %><li><a href="#" onclick="javascript:get_annotations(); return false;"
             ><span class="annotate"></span>Annotate</a></li><%
@@ -139,10 +136,10 @@ include file="pageheader.jspf"
         }
         %>
 	<li><a href="<%= context + Prefix.RAW_P + uriEncodedPath
-            + (rev.length() == 0 ? "" : "?") + rev
+            + (rev.length() == 0 ? "" : "?r=" + Util.URIEncode(rev))
             %>"><span id="raw"></span>Raw</a></li>
 	<li><a href="<%= context + Prefix.DOWNLOAD_P + uriEncodedPath
-            + (rev.length() == 0 ? "" : "?") + rev
+            + (rev.length() == 0 ? "" : "?r=" + Util.URIEncode(rev))
             %>"><span id="download"></span>Download</a></li>
 	<%
     }
@@ -160,6 +157,7 @@ include file="pageheader.jspf"
 %>
     <input type="hidden" id="contextpath" value="<%=request.getContextPath()%>" />
 </div>
+<div id="scope"><span id="scope_content">&nbsp;</span></div>
         </form>
     </div>
 <div id="content">

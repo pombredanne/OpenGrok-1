@@ -209,14 +209,19 @@ PKG pkgsend add file doc/ctags.config mode=0444 owner=root group=sys path=/usr/o
 
 
 # install libs
-LV=5.3.1
-for file in ant.jar bcel-5.2.jar \
-            lucene-analyzers-common-${LV}.jar lucene-core-${LV}.jar lucene-queryparser-${LV}.jar lucene-suggest-${LV}.jar \
-            jrcs.jar \
-            swing-layout-0.9.jar \
-	    json-simple-1.1.1.jar
+LV=6.1.0
+for file in ant.jar \
+    bcel-6.0.jar \
+    lucene-analyzers-common-${LV}.jar \
+    lucene-core-${LV}.jar \
+    lucene-queryparser-${LV}.jar \
+    lucene-suggest-${LV}.jar \
+    jrcs.jar \
+    swing-layout-0.9.jar \
+    json-simple-1.1.1.jar
 do
-   PKG pkgsend add file dist/lib/${file} mode=0444 owner=root group=bin path=/usr/opengrok/lib/${file}
+   PKG pkgsend add file dist/lib/${file} mode=0444 owner=root group=bin \
+       path=/usr/opengrok/lib/${file}
 done
 
 
@@ -225,7 +230,7 @@ PKG pkgsend add file dist/opengrok.1 mode=0444 owner=root group=bin path=/usr/op
 
 # install default configuration
 PKG pkgsend add depend fmri=pkg:/runtime/java/jre-8 type=require
-PKG pkgsend add depend fmri=pkg:/web/java-servlet/tomcat type=require
+PKG pkgsend add depend fmri=pkg:/web/java-servlet/tomcat-8 type=require
 
 # Following line gets commented by that the developer/tool/exuberant-ctags has been removed from IPS
 # This has to stay commented until the next release of Solaris will contain the exhuberant ctags package

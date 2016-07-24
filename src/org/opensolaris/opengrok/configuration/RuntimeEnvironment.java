@@ -17,8 +17,8 @@
  * CDDL HEADER END
  */
 
-/*
- * Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+ /*
+ * Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
  */
 package org.opensolaris.opengrok.configuration;
 
@@ -35,22 +35,44 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.net.UnknownHostException;
+import java.nio.file.ClosedWatchServiceException;
+import java.nio.file.FileSystems;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.opensolaris.opengrok.OpenGrokLogger;
+import org.opensolaris.opengrok.authorization.AuthorizationFramework;
 import org.opensolaris.opengrok.history.HistoryGuru;
 import org.opensolaris.opengrok.history.RepositoryInfo;
 import org.opensolaris.opengrok.index.Filter;
 import org.opensolaris.opengrok.index.IgnoredNames;
+import org.opensolaris.opengrok.logger.LoggerFactory;
 import org.opensolaris.opengrok.util.Executor;
 import org.opensolaris.opengrok.util.IOUtils;
+
+import static java.nio.file.FileVisitResult.CONTINUE;
+import static java.nio.file.StandardWatchEventKinds.ENTRY_CREATE;
+import static java.nio.file.StandardWatchEventKinds.ENTRY_DELETE;
+import static java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
+
 
 /**
  * The RuntimeEnvironment class is used as a placeholder for the current
@@ -58,12 +80,17 @@ import org.opensolaris.opengrok.util.IOUtils;
  */
 public final class RuntimeEnvironment {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeEnvironment.class);
+
     private Configuration configuration;
     private final ThreadLocal<Configuration> threadConfig;
-    private static final Logger log = Logger.getLogger(RuntimeEnvironment.class.getName());
-    private static RuntimeEnvironment instance = new RuntimeEnvironment();
+    private static final RuntimeEnvironment instance = new RuntimeEnvironment();
     private static ExecutorService historyExecutor = null;
     private static ExecutorService historyRenamedExecutor = null;
+    private static ExecutorService searchExecutor = null;
+
+    private final Map<Project, List<RepositoryInfo>> repository_map = new TreeMap<>();
+    private final Map<Project, Set<Group>> project_group_map = new TreeMap<>();
 
     /* Get thread pool used for top-level repository history generation. */
     public static synchronized ExecutorService getHistoryExecutor() {
@@ -74,19 +101,20 @@ public final class RuntimeEnvironment {
                 try {
                     num = Integer.valueOf(total);
                 } catch (Throwable t) {
-                    log.log(Level.WARNING, "Failed to parse the number of " +
-                        "cache threads to use for cache creation", t);
+                    LOGGER.log(Level.WARNING, "Failed to parse the number of "
+                            + "cache threads to use for cache creation", t);
                 }
             }
 
             historyExecutor = Executors.newFixedThreadPool(num,
-                new ThreadFactory() {
-                    public Thread newThread(Runnable runnable) {
-                        Thread thread = Executors.defaultThreadFactory().newThread(runnable);
-                        thread.setName("history-handling-" + thread.getId());
-                        return thread;
-                    }
-                });
+                    new ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable runnable) {
+                    Thread thread = Executors.defaultThreadFactory().newThread(runnable);
+                    thread.setName("history-handling-" + thread.getId());
+                    return thread;
+                }
+            });
         }
 
         return historyExecutor;
@@ -101,22 +129,41 @@ public final class RuntimeEnvironment {
                 try {
                     num = Integer.valueOf(total);
                 } catch (Throwable t) {
-                    log.log(Level.WARNING, "Failed to parse the number of " +
-                        "cache threads to use for cache creation of renamed files", t);
+                    LOGGER.log(Level.WARNING, "Failed to parse the number of "
+                            + "cache threads to use for cache creation of renamed files", t);
                 }
             }
 
             historyRenamedExecutor = Executors.newFixedThreadPool(num,
-                new ThreadFactory() {
-                    public Thread newThread(Runnable runnable) {
-                        Thread thread = Executors.defaultThreadFactory().newThread(runnable);
-                        thread.setName("renamed-handling-" + thread.getId());
-                        return thread;
-                    }
-                });
+                    new ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable runnable) {
+                    Thread thread = Executors.defaultThreadFactory().newThread(runnable);
+                    thread.setName("renamed-handling-" + thread.getId());
+                    return thread;
+                }
+            });
         }
 
         return historyRenamedExecutor;
+    }
+
+    /* Get thread pool used for multi-project searches. */
+    public synchronized ExecutorService getSearchExecutor() {
+        if (searchExecutor == null) {
+            searchExecutor = Executors.newFixedThreadPool(
+                this.getMaxSearchThreadCount(),
+                new ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable runnable) {
+                    Thread thread = Executors.defaultThreadFactory().newThread(runnable);
+                    thread.setName("search-" + thread.getId());
+                    return thread;
+                }
+            });
+        }
+
+        return searchExecutor;
     }
 
     public static synchronized void freeHistoryExecutor() {
@@ -164,7 +211,7 @@ public final class RuntimeEnvironment {
             }
             return file.getCanonicalPath();
         } catch (IOException ex) {
-            OpenGrokLogger.getLogger().log(Level.SEVERE, "Failed to get canonical path", ex);
+            LOGGER.log(Level.SEVERE, "Failed to get canonical path", ex);
             return s;
         }
     }
@@ -271,12 +318,12 @@ public final class RuntimeEnvironment {
         for (String allowedSymlink : getAllowedSymlinks()) {
             String allowedTarget = new File(allowedSymlink).getCanonicalPath();
             if (canonicalPath.startsWith(allowedTarget)) {
-                return canonicalPath.substring(allowedTarget.length() +
-                        stripCount);
+                return canonicalPath.substring(allowedTarget.length()
+                        + stripCount);
             }
         }
-        throw new FileNotFoundException("Failed to resolve [" + canonicalPath +
-                "] relative to source root [" + sourceRoot + "]");
+        throw new FileNotFoundException("Failed to resolve [" + canonicalPath
+                + "] relative to source root [" + sourceRoot + "]");
     }
 
     /**
@@ -304,7 +351,36 @@ public final class RuntimeEnvironment {
      * @param projects the list of projects to use
      */
     public void setProjects(List<Project> projects) {
+        populateGroups(getGroups(), projects);
         threadConfig.get().setProjects(projects);
+    }
+
+    /**
+     * Do we have groups?
+     *
+     * @return true if we have groups
+     */
+    public boolean hasGroups() {
+        return (getGroups() != null && !getGroups().isEmpty());
+    }
+
+    /**
+     * Get all of the groups
+     *
+     * @return a set containing all of the groups (may be null)
+     */
+    public Set<Group> getGroups() {
+        return threadConfig.get().getGroups();
+    }
+
+    /**
+     * Set the list of the groups
+     *
+     * @param groups the set of groups to use
+     */
+    public void setGroups(Set<Group> groups) {
+        populateGroups(groups, getProjects());
+        threadConfig.get().setGroups(groups);
     }
 
     /**
@@ -317,6 +393,16 @@ public final class RuntimeEnvironment {
     public RuntimeEnvironment register() {
         threadConfig.set(configuration);
         return this;
+    }
+
+    /**
+     * Returns constructed project - repositories map.
+     *
+     * @return the map
+     * @see #generateProjectRepositoriesMap
+     */
+    public Map<Project, List<RepositoryInfo>> getProjectRepositoriesMap() {
+        return repository_map;
     }
 
     /**
@@ -371,28 +457,37 @@ public final class RuntimeEnvironment {
         threadConfig.get().setHitsPerPage(hitsPerPage);
     }
 
+    // cache these tests instead of reruning them for every call
+    private transient Boolean exCtagsFound;
+    private transient Boolean isUniversalCtagsVal;
+
     /**
      * Validate that I have a Exuberant ctags program I may use
      *
      * @return true if success, false otherwise
      */
     public boolean validateExuberantCtags() {
-        boolean ret = true;
-        Executor executor = new Executor(new String[]{getCtags(), "--version"});
-
-        executor.exec(false);
-        String output = executor.getOutputString();
-        if (output == null || ( output.indexOf("Exuberant Ctags") == -1 && output.indexOf("Universal Ctags") == -1 ) ) {
-            log.log(Level.SEVERE, "Error: No Exuberant Ctags found in PATH !\n"
-                    + "(tried running " + "{0}" + ")\n"
-                    + "Please use option -c to specify path to a good "
-                    + "Exuberant Ctags program.\n"
-                    + "Or set it in java property "
-                    + "org.opensolaris.opengrok.analysis.Ctags", getCtags());
-            ret = false;
+        if (exCtagsFound == null) {
+            Executor executor = new Executor(new String[]{getCtags(), "--version"});
+            executor.exec(false);
+            String output = executor.getOutputString();
+            boolean isUnivCtags = output!=null?output.contains("Universal Ctags"):false;
+            if (output == null || (!output.contains("Exuberant Ctags") && !isUnivCtags)) {
+                LOGGER.log(Level.SEVERE, "Error: No Exuberant Ctags found in PATH !\n"
+                        + "(tried running " + "{0}" + ")\n"
+                        + "Please use option -c to specify path to a good "
+                        + "Exuberant Ctags program.\n"
+                        + "Or set it in java property "
+                        + "org.opensolaris.opengrok.analysis.Ctags", getCtags());
+                exCtagsFound = false;
+            } else {
+                if (isUnivCtags) {
+                    isUniversalCtagsVal = true;
+                }
+                exCtagsFound = true;
+            }
         }
-
-        return ret;
+        return exCtagsFound;
     }
 
     /**
@@ -401,19 +496,21 @@ public final class RuntimeEnvironment {
      * @return true if we are using Universal ctags
      */
     public boolean isUniversalCtags() {
-        boolean ret = false;
-        Executor executor = new Executor(new String[]{getCtags(), "--version"});
+        if (isUniversalCtagsVal == null) {
+            isUniversalCtagsVal = false;
+            Executor executor = new Executor(new String[]{getCtags(), "--version"});
 
-        executor.exec(false);
-        String output = executor.getOutputString();
-        if (output.indexOf("Universal Ctags") != -1 ) {
-	  ret = true;
-	}
-	return ret;
+            executor.exec(false);
+            String output = executor.getOutputString();
+            if (output.contains("Universal Ctags")) {
+                isUniversalCtagsVal = true;
+            }
+        }
+        return isUniversalCtagsVal;
     }
 
     /**
-     * Get the max time a SMC operation may use to avoid beeing cached
+     * Get the max time a SMC operation may use to avoid being cached
      *
      * @return the max time
      */
@@ -557,13 +654,21 @@ public final class RuntimeEnvironment {
 
     /**
      * Set the size of buffer which will determine when the docs are flushed to
-     * disk. Specify size in MB please. 16MB is default
-     * note that this is per thread (lucene uses 8 threads by default in 4.x)
+     * disk. Specify size in MB please. 16MB is default note that this is per
+     * thread (lucene uses 8 threads by default in 4.x)
      *
      * @param ramBufferSize the size(in MB) when we should flush the docs
      */
     public void setRamBufferSize(double ramBufferSize) {
         threadConfig.get().setRamBufferSize(ramBufferSize);
+    }
+
+    public void setPluginDirectory(String pluginDirectory) {
+        threadConfig.get().setPluginDirectory(pluginDirectory);
+    }
+
+    public String getPluginDirectory() {
+        return threadConfig.get().getPluginDirectory();
     }
 
     /**
@@ -649,7 +754,7 @@ public final class RuntimeEnvironment {
 
     /**
      * Get the client command to use to access the repository for the given
-     * fully quallified classname.
+     * fully qualified classname.
      *
      * @param clazzName name of the targeting class
      * @return {@code null} if not yet set, the client command otherwise.
@@ -828,6 +933,14 @@ public final class RuntimeEnvironment {
         threadConfig.get().setScopesEnabled(scopesEnabled);
     }
 
+    public boolean isFoldingEnabled() {
+        return threadConfig.get().isFoldingEnabled();
+    }
+
+    public void setFoldingEnabled(boolean foldingEnabled) {
+        threadConfig.get().setFoldingEnabled(foldingEnabled);
+    }
+
     public Date getDateForLastIndexRun() {
         return threadConfig.get().getDateForLastIndexRun();
     }
@@ -866,6 +979,7 @@ public final class RuntimeEnvironment {
 
     /**
      * Return whether e-mail addresses should be obfuscated in the xref.
+     * @return if we obfuscate emails
      */
     public boolean isObfuscatingEMailAddresses() {
         return threadConfig.get().isObfuscatingEMailAddresses();
@@ -873,6 +987,7 @@ public final class RuntimeEnvironment {
 
     /**
      * Set whether e-mail addresses should be obfuscated in the xref.
+     * @param obfuscate should we obfuscate emails?
      */
     public void setObfuscatingEMailAddresses(boolean obfuscate) {
         threadConfig.get().setObfuscatingEMailAddresses(obfuscate);
@@ -914,6 +1029,22 @@ public final class RuntimeEnvironment {
         return threadConfig.get().isHandleHistoryOfRenamedFiles();
     }
 
+    public void setRevisionMessageCollapseThreshold(int threshold) {
+        threadConfig.get().setRevisionMessageCollapseThreshold(threshold);
+    }
+
+    public int getRevisionMessageCollapseThreshold() {
+        return threadConfig.get().getRevisionMessageCollapseThreshold();
+    }
+
+    public void setMaxSearchThreadCount(int count) {
+        threadConfig.get().setMaxSearchThreadCount(count);
+    }
+
+    public int getMaxSearchThreadCount() {
+        return threadConfig.get().getMaxSearchThreadCount();
+    }
+
     /**
      * Read an configuration file and set it as the current configuration.
      *
@@ -952,18 +1083,93 @@ public final class RuntimeEnvironment {
         writeConfiguration(configServerSocket.getInetAddress(), configServerSocket.getLocalPort());
     }
 
+    /**
+     * Generate a TreeMap of projects with corresponding repository information.
+     *
+     * Project with some repository information is considered as a repository
+     * otherwise it is just a simple project.
+     */
+    private void generateProjectRepositoriesMap() throws IOException {
+        repository_map.clear();
+        for (RepositoryInfo r : configuration.getRepositories()) {
+            Project proj;
+            String repoPath;
+
+            repoPath = getPathRelativeToSourceRoot(
+                    new File(r.getDirectoryName()), 0);
+
+            if ((proj = Project.getProject(repoPath)) != null) {
+                List<RepositoryInfo> values = repository_map.get(proj);
+                if (values == null) {
+                    values = new ArrayList<>();
+                    repository_map.put(proj, values);
+                }
+                values.add(r);
+            }
+        }
+    }
+
+    /**
+     * Classifies projects and puts them in their groups.
+     */
+    private void populateGroups(Set<Group> groups, List<Project> projects) {
+        if (projects == null || groups == null) {
+            return;
+        }
+        for (Project project : projects) {
+            // filterProjects only groups which match project's description
+            Set<Group> copy = new TreeSet<>(groups);
+            copy.removeIf(new Predicate<Group>() {
+                @Override
+                public boolean test(Group g) {
+                    return !g.match(project);
+                }
+            });
+
+            // add project to the groups
+            for (Group group : copy) {
+                if (repository_map.get(project) == null) {
+                    group.addProject(project);
+                } else {
+                    group.addRepository(project);
+                }
+                project.addGroup(group);
+            }
+        }
+    }
+    
+    /**
+     * Sets the configuration and performs necessary actions.
+     *
+     * Mainly it classifies the projects in their groups and generates project -
+     * repositories map
+     *
+     * @param configuration what configuration to use
+     */
     public void setConfiguration(Configuration configuration) {
         this.configuration = configuration;
+        try {
+            generateProjectRepositoriesMap();
+        } catch (IOException ex) {
+            LOGGER.log(Level.SEVERE, "Cannot generate project - repository map", ex);
+        }
+        populateGroups(getGroups(), getProjects());
         register();
         HistoryGuru.getInstance().invalidateRepositories(
-            configuration.getRepositories());
+                configuration.getRepositories());
     }
 
     public void setConfiguration(Configuration configuration, List<String> subFileList) {
         this.configuration = configuration;
+        try {
+            generateProjectRepositoriesMap();
+        } catch (IOException ex) {
+            LOGGER.log(Level.SEVERE, "Cannot generate project - repository map", ex);
+        }
+        populateGroups(getGroups(), getProjects());
         register();
         HistoryGuru.getInstance().invalidateRepositories(
-            configuration.getRepositories(), subFileList);
+                configuration.getRepositories(), subFileList);
     }
 
     public Configuration getConfiguration() {
@@ -1001,7 +1207,7 @@ public final class RuntimeEnvironment {
                         try (Socket s = sock.accept();
                                 BufferedInputStream in = new BufferedInputStream(s.getInputStream())) {
                             bos.reset();
-                            log.log(Level.FINE, "OpenGrok: Got request from {0}",
+                            LOGGER.log(Level.FINE, "OpenGrok: Got request from {0}",
                                     s.getInetAddress().getHostAddress());
                             byte[] buf = new byte[1024];
                             int len;
@@ -1009,8 +1215,8 @@ public final class RuntimeEnvironment {
                                 bos.write(buf, 0, len);
                             }
                             buf = bos.toByteArray();
-                            if (log.isLoggable(Level.FINE)) {
-                                log.log(Level.FINE, "new config:{0}", new String(buf));
+                            if (LOGGER.isLoggable(Level.FINE)) {
+                                LOGGER.log(Level.FINE, "new config:{0}", new String(buf));
                             }
                             Object obj;
                             try (XMLDecoder d = new XMLDecoder(new ByteArrayInputStream(buf))) {
@@ -1018,23 +1224,25 @@ public final class RuntimeEnvironment {
                             }
 
                             if (obj instanceof Configuration) {
+                                //force timestamp to update itself upon new config arrival
+                                ((Configuration) obj).refreshDateForLastIndexRun();
                                 setConfiguration((Configuration) obj);
-                                log.log(Level.INFO, "Configuration updated: {0}",
-                                    configuration.getSourceRoot());
+                                LOGGER.log(Level.INFO, "Configuration updated: {0}",
+                                        configuration.getSourceRoot());
                             }
                         } catch (IOException e) {
-                            log.log(Level.SEVERE, "Error reading config file: ", e);
+                            LOGGER.log(Level.SEVERE, "Error reading config file: ", e);
                         } catch (RuntimeException e) {
-                            log.log(Level.SEVERE, "Error parsing config file: ", e);
+                            LOGGER.log(Level.SEVERE, "Error parsing config file: ", e);
                         }
                     }
                 }
-            });
+            }, "conigurationListener");
             t.start();
         } catch (UnknownHostException ex) {
-            log.log(Level.FINE, "Problem resolving sender: ", ex);
+            LOGGER.log(Level.FINE, "Problem resolving sender: ", ex);
         } catch (IOException ex) {
-            log.log(Level.FINE, "I/O error when waiting for config: ", ex);
+            LOGGER.log(Level.FINE, "I/O error when waiting for config: ", ex);
         }
 
         if (!ret && configServerSocket != null) {
@@ -1042,5 +1250,97 @@ public final class RuntimeEnvironment {
         }
 
         return ret;
+    }
+
+    private Thread watchDogThread;
+    private WatchService watchDogWatcher;
+    public static final int THREAD_SLEEP_TIME = 2000;
+
+    /**
+     * Starts a watch dog service for a directory. It automatically reloads the
+     * AuthorizationFramework if there was a change.
+     *
+     * You can control start of this service by context-parameter in web.xml
+     * param-name: enableAuthorizationWatchDog
+     *
+     * @param directory root directory for plugins
+     */
+    public void startWatchDogService(File directory) {
+        if (directory == null || !directory.isDirectory() || !directory.canRead()) {
+            LOGGER.log(Level.INFO, "Watch dog cannot be started - invalid directory: {0}", directory);
+            return;
+        }
+        watchDogThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    watchDogWatcher = FileSystems.getDefault().newWatchService();
+                    Path dir = Paths.get(directory.getAbsolutePath());
+
+                    Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
+                        @Override
+                        public FileVisitResult postVisitDirectory(Path d, IOException exc) throws IOException {
+                            // attach monitor
+                            d.register(watchDogWatcher, ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY);
+                            return CONTINUE;
+                        }
+                    });
+                    
+                    LOGGER.log(Level.INFO, "Watch dog started {0}", directory);
+                    while (!Thread.currentThread().isInterrupted()) {
+                        final WatchKey key;
+                        try {
+                            key = watchDogWatcher.take();
+                        } catch (ClosedWatchServiceException x) {
+                            break;
+                        }
+                        boolean reload = false;
+                        for (WatchEvent<?> event : key.pollEvents()) {
+                            final WatchEvent.Kind<?> kind = event.kind();
+
+                            if (kind == ENTRY_CREATE) {
+                                reload = true;
+                            } else if (kind == ENTRY_DELETE) {
+                                reload = true;
+                            } else if (kind == ENTRY_MODIFY) {
+                                reload = true;
+                            }
+                        }
+                        if (reload) {
+                            Thread.sleep(THREAD_SLEEP_TIME); // experimental wait if file is being written right now
+                            AuthorizationFramework.getInstance().reload();
+                        }
+                        if (!key.reset()) {
+                            break;
+                        }
+                    }
+                } catch (InterruptedException | IOException ex) {
+                    Thread.currentThread().interrupt();
+                }
+                LOGGER.log(Level.INFO, "Watchdog finishing (exiting)");
+            }
+        }, "watchDogService");
+        watchDogThread.start();
+    }
+
+    /**
+     * Stops the watch dog service.
+     */
+    public void stopWatchDogService() {
+        if (watchDogWatcher != null) {
+            try {
+                watchDogWatcher.close();
+            } catch (IOException ex) {
+                LOGGER.log(Level.INFO, "Cannot close WatchDogService: ", ex);
+            }
+        }
+        if (watchDogThread != null) {
+            watchDogThread.interrupt();
+            try {
+                watchDogThread.join();
+            } catch (InterruptedException ex) {
+                LOGGER.log(Level.INFO, "Cannot join WatchDogService thread: ", ex);
+            }
+        }
     }
 }

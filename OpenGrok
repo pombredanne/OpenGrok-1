@@ -8,6 +8,7 @@
 #   - Debian      (Linux)
 #
 # Supported Deployment Engines:
+#   - Tomcat 8
 #   - Tomcat 7
 #   - Tomcat 6
 #   - Glassfish
@@ -265,6 +266,11 @@ DefaultInstanceConfiguration()
     if [ -n "${OPENGROK_GENERATE_HISTORY}" ]
     then
         GENERATE_HISTORY="-r ${OPENGROK_GENERATE_HISTORY}"
+    fi
+
+    if [ "$OPENGROK_GENERATE_HISTORY" != "off" ]
+    then
+        GENERATE_HISTORY="${GENERATE_HISTORY} -H"
     fi
 
     # OPTIONAL: override depth of scanning for repositories
@@ -547,9 +553,8 @@ FindApplicationServerType()
     # Maybe a better implementation would be to call Application
     # Server specific WAR Directory and see if they exist.
 
-    if [    -d "/var/tomcat6/webapps"        \
-         -o -d "/var/lib/tomcat6/webapps"    \
-         -o -d "/var/lib/tomcat7/webapps"    \
+    if [    -d "/var/tomcat8/webapps"        \
+         -o -d "/var/lib/tomcat8/webapps"    \
        ]
     then
         echo "Tomcat"
@@ -580,9 +585,8 @@ DetermineWarDirectoryTomcat()
 
     for prefix in               \
         ${OPENGROK_TOMCAT_BASE} \
-        /var/tomcat6            \
-        /var/lib/tomcat6        \
-        /var/lib/tomcat7
+        /var/lib/tomcat8	\
+        /var/tomcat8
     do
         if [ -d "${prefix}/webapps" ]
         then
@@ -716,11 +720,11 @@ ValidateConfiguration()
     then
         if [ "`uname -s`" = "SunOS" -a -d /opt/SUNWjavadb -a -d /usr/opengrok ];
 	then
-	    if [ -d "/var/tomcat6" -a \
-	        ! -r "/var/tomcat6/webapps/source/WEB-INF/lib/derbyclient.jar" ];
+	    if [ -d "/var/tomcat8" -a \
+	        ! -r "/var/tomcat8/webapps/source/WEB-INF/lib/derbyclient.jar" ];
 	    then
 	        FatalError "JavaDB on but no derbyclient.jar under" \
-		    "/var/tomcat6/webapps/source/WEB-INF/lib"
+		    "/var/tomcat8/webapps/source/WEB-INF/lib"
 	    fi
 	    if [ ! -r "/usr/opengrok/lib/derbyclient.jar" ]; then
 	        FatalError "JavaDB on but no derbyclient.jar under" \
@@ -836,7 +840,7 @@ StdInvocation()
 
 UpdateGeneratedData()
 {
-    StdInvocation -H
+    StdInvocation
 }
 
 UpdateDataPartial()
@@ -903,6 +907,43 @@ DeployWar()
     if [ $? != 0 ]
     then
         FatalError "Web Application Installation FAILED"
+    fi
+
+    # Fix for opengrok issue https://github.com/OpenGrok/OpenGrok/issues/863
+    # If user does not use default OPENGROK_INSTANCE_BASE or default
+    # WEBAPP_CONFIG_ADDRESS, then attempt to extract WEB-INF/web.xml from
+    # source.war using jar or zip utility, update the hardcoded values and
+    # then update source.war with the new WEB-INF/web.xml
+
+    if [ "${OPENGROK_INSTANCE_BASE}" != '/var/opengrok' ] || [ "${WEBAPP_CONFIG_ADDRESS}" != 'localhost:2424' ]
+    then
+        EXTRACT_COMMAND=""
+        COMPRESS_COMMAND=""
+        if [ -n "`Which jar`" ]
+        then
+            EXTRACT_COMMAND="jar -xf"
+            COMPRESS_COMMAND="jar -uf"
+        elif [ -n "`Which zip`" ] && [ -n "`Which unzip`" ]
+        then
+            EXTRACT_COMMAND="unzip"
+            COMPRESS_COMMAND="zip -rf"
+        fi
+
+        if [ -n "${EXTRACT_COMMAND}" ]
+        then
+            cd "${warTarget}"
+            eval "${EXTRACT_COMMAND} ${warTarget}/source.war WEB-INF/web.xml"
+            if [ "${OPENGROK_INSTANCE_BASE}" != '/var/opengrok' ]
+            then
+                sed -i -e 's:/var/opengrok/etc/configuration.xml:'"$XML_CONFIGURATION"':g' "${warTarget}/WEB-INF/web.xml"
+            fi
+            if [ "${WEBAPP_CONFIG_ADDRESS}" != 'localhost:2424' ]
+            then
+                sed -i -e 's/localhost:2424/'"$WEBAPP_CONFIG_ADDRESS"'/g' "${warTarget}/WEB-INF/web.xml"
+            fi
+            eval "${COMPRESS_COMMAND} ${warTarget}/source.war WEB-INF/web.xml"
+            rm -rf "${warTarget}/WEB-INF"
+        fi
     fi
 
     Progress

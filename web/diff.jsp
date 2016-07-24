@@ -18,8 +18,7 @@ information: Portions Copyright [yyyy] [name of copyright owner]
 
 CDDL HEADER END
 
-Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
-Use is subject to license terms.
+Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 
 Portions Copyright 2011 Jens Elkner.
 --%><%@page import="
@@ -42,9 +41,10 @@ org.opensolaris.opengrok.web.DiffType"
 %><%!
 private String getAnnotateRevision(DiffData data) {
     if (data.type == DiffType.OLD || data.type == DiffType.NEW) {
+        String rev = data.rev[data.type == DiffType.NEW ? 1 : 0];
         return "<script type=\"text/javascript\">/* <![CDATA[ */ "
-            + "document.rev = 'r=" + data.rev[data.type == DiffType.NEW ? 1 : 0]
-            + "'; /* ]]> */</script>";
+            + "document.rev = " + Util.htmlize(Util.jsStringLiteral(rev))
+            + "; /* ]]> */</script>";
     }
     return "";
 }
@@ -52,7 +52,7 @@ private String getAnnotateRevision(DiffData data) {
 
 include file="mast.jsp"
 
-%><%
+%><script src="<%=request.getContextPath()%>/js/diff.js" type="text/javascript"></script><%
 /* ---------------------- diff.jsp start --------------------- */
 {
     cfg = PageConfig.get(request);
@@ -157,6 +157,7 @@ include file="mast.jsp"
         <span> <a href="<%= reqURI %>?r1=<%= rp1 %>&amp;r2=<%= rp2
             %>&amp;format=<%= type.getAbbrev() %>&amp;full=0">compact</a></span><%
         }
+        %><span><a href="#" id="toggle-jumper">jumper</a></span><%
     %></div>
 </div>
 
@@ -243,7 +244,7 @@ include file="mast.jsp"
                     }
                     if (cn1 <= cl1) {
             %>
-            <tr><td><%
+            <tr class="chunk"><td><%
                         for (int j = cn1; j  <= cl1 ; j++) {
                 %><del class="d"><%= ++ln1 %></del><%= file1[j]
                 %><br/><%
@@ -253,7 +254,11 @@ include file="mast.jsp"
                     }
                     if (cn2 <= cl2) {
             %>
-            <tr class="k"><td><%
+            <tr class="k<%
+                    if (cn1 > cl1) {
+                        %> chunk<%
+                    }
+                %>"><td><%
                         for (int j = cn2; j  < cl2; j++) {
                 %><i class="a"><%= ++ln2 %></i><%= file2[j]
                 %><br/><%
@@ -315,7 +320,7 @@ include file="mast.jsp"
             </tr><%
                     }
             %>
-            <tr class="k"><td><%
+            <tr class="k chunk"><td><%
                     for (int j = cn1; j  <= cl1; j++) {
                 %><i><%= ++ln1 %></i><%= file1[j] %><br/><%
                     }

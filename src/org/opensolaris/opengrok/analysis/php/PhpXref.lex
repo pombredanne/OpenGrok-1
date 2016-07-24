@@ -18,6 +18,10 @@
  */
 
 /*
+ * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ */
+
+/*
  * Cross reference a PHP file
  */
 
@@ -389,7 +393,7 @@ HtmlName      = {HtmlNameStart} ({HtmlNameStart} | [\-.0-9\u00B7])*
         out.write("</strong>");
     }
 
-    \'      { out.write("\"</span>"); yypop(); }
+    \'      { out.write("'</span>"); yypop(); }
 }
 
 <HEREDOC, NOWDOC>^{Identifier} ";"? {EOL}  {
@@ -577,10 +581,8 @@ HtmlName      = {HtmlNameStart} ({HtmlNameStart} | [\-.0-9\u00B7])*
 
     ("http" | "https" | "ftp" ) "://" ({FNameChar}|{URIChar})+[a-zA-Z0-9/]
             {
-            String url = yytext();
-            out.write("<a href=\"");
-            out.write(url);out.write("\">");
-            out.write(url);out.write("</a>");}
+              appendLink(yytext());
+            }
 
     {FNameChar}+ "@" {FNameChar}+ "." {FNameChar}+
             {
